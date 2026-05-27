@@ -21,7 +21,9 @@ const ANCHOR_SPRING_K = 0.045;
 const DAMPING = 0.92;
 const REPEL_RADIUS_PX = 140;
 const REPEL_STRENGTH = 0.9;
-const BALL_RADIUS_PX = 6;
+const BALL_RADIUS_PX = 4;
+const GRID_DIM = 10; // 10 x 10 = 100 dots
+const GRID_SPACING_PX = 22;
 
 export default function ExperimentOne() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,12 +38,8 @@ export default function ExperimentOne() {
     let raf = 0;
     let running = true;
 
-    let rx = 0;
-    let ry = 0;
-    let x = 0;
-    let y = 0;
-    let px = 0;
-    let py = 0;
+    type Dot = { x: number; y: number; px: number; py: number; rx: number; ry: number };
+    const dots: Dot[] = [];
     let mouseX = -9999;
     let mouseY = -9999;
     let mouseInside = false;
@@ -54,12 +52,20 @@ export default function ExperimentOne() {
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-      rx = (w / 2) * dpr;
-      ry = (h / 2) * dpr;
-      x = rx;
-      y = ry;
-      px = rx;
-      py = ry;
+
+      // Rebuild the 10x10 grid centered on the viewport.
+      dots.length = 0;
+      const spacing = GRID_SPACING_PX * dpr;
+      const totalSpan = spacing * (GRID_DIM - 1);
+      const startX = (w / 2) * dpr - totalSpan / 2;
+      const startY = (h / 2) * dpr - totalSpan / 2;
+      for (let row = 0; row < GRID_DIM; row++) {
+        for (let col = 0; col < GRID_DIM; col++) {
+          const rxA = startX + col * spacing;
+          const ryA = startY + row * spacing;
+          dots.push({ x: rxA, y: ryA, px: rxA, py: ryA, rx: rxA, ry: ryA });
+        }
+      }
     }
     resize();
 
@@ -78,41 +84,47 @@ export default function ExperimentOne() {
     function step() {
       if (!canvas || !ctx || !running) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const radPx = REPEL_RADIUS_PX * dpr;
+      const radSq = radPx * radPx;
 
-      // Anchor spring toward (rx, ry).
-      let fx = (rx - x) * ANCHOR_SPRING_K;
-      let fy = (ry - y) * ANCHOR_SPRING_K;
+      for (let i = 0; i < dots.length; i++) {
+        const d = dots[i];
 
-      // Mouse contact repulsion.
-      if (mouseInside) {
-        const dxm = x - mouseX;
-        const dym = y - mouseY;
-        const distSq = dxm * dxm + dym * dym;
-        const radPx = REPEL_RADIUS_PX * dpr;
-        const radSq = radPx * radPx;
-        if (distSq < radSq && distSq > 1) {
-          const dist = Math.sqrt(distSq);
-          const falloff = 1 - dist / radPx;
-          const f = REPEL_STRENGTH * falloff * falloff;
-          fx += (dxm / dist) * f * radPx * 0.02;
-          fy += (dym / dist) * f * radPx * 0.02;
+        // Anchor spring toward (rx, ry).
+        let fx = (d.rx - d.x) * ANCHOR_SPRING_K;
+        let fy = (d.ry - d.y) * ANCHOR_SPRING_K;
+
+        // Mouse contact repulsion.
+        if (mouseInside) {
+          const dxm = d.x - mouseX;
+          const dym = d.y - mouseY;
+          const distSq = dxm * dxm + dym * dym;
+          if (distSq < radSq && distSq > 1) {
+            const dist = Math.sqrt(distSq);
+            const falloff = 1 - dist / radPx;
+            const f = REPEL_STRENGTH * falloff * falloff;
+            fx += (dxm / dist) * f * radPx * 0.02;
+            fy += (dym / dist) * f * radPx * 0.02;
+          }
         }
+
+        // Verlet integration with damping.
+        const vx = (d.x - d.px) * DAMPING;
+        const vy = (d.y - d.py) * DAMPING;
+        d.px = d.x;
+        d.py = d.y;
+        d.x += vx + fx;
+        d.y += vy + fy;
       }
 
-      // Verlet integration with damping. The (x - px) carries momentum forward
-      // so the ball overshoots its anchor on the way home and oscillates.
-      const vx = (x - px) * DAMPING;
-      const vy = (y - py) * DAMPING;
-      px = x;
-      py = y;
-      x += vx + fx;
-      y += vy + fy;
-
-      // Render: single solid blue dot. No border, no halo, no anchor mark.
+      // Render: 100 solid blue dots, no lines.
       ctx.fillStyle = "#1E96E6";
-      ctx.beginPath();
-      ctx.arc(x, y, BALL_RADIUS_PX * dpr, 0, Math.PI * 2);
-      ctx.fill();
+      const dotR = BALL_RADIUS_PX * dpr;
+      for (let i = 0; i < dots.length; i++) {
+        ctx.beginPath();
+        ctx.arc(dots[i].x, dots[i].y, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       raf = requestAnimationFrame(step);
     }
@@ -140,9 +152,9 @@ export default function ExperimentOne() {
       />
       <div className="pointer-events-none absolute top-6 left-6">
         <p className="mono-caps text-[10px] text-bone/40">Experiment 01</p>
-        <p className="font-serif text-2xl text-bone/80">Anchored ball, contact repulsion</p>
+        <p className="font-serif text-2xl text-bone/80">100-dot square, contact repulsion</p>
         <p className="mono-caps mt-2 text-[10px] text-bone/30">
-          K_anchor=0.045 · damping=0.92 · repel_r=140px · strength=0.9
+          10×10 grid · spacing=22px · K_anchor=0.045 · damping=0.92 · repel_r=140px · strength=0.9
         </p>
       </div>
       <div className="absolute bottom-6 left-6">
@@ -152,8 +164,8 @@ export default function ExperimentOne() {
       </div>
       <div className="pointer-events-none absolute bottom-6 right-6">
         <p className="mono-caps text-[10px] text-bone/30">
-          Move the cursor near the ball to push it. Release the cursor and the
-          anchor spring carries it home with one or two visible oscillations.
+          Move the cursor across the grid. Dots within 140px scatter, then
+          spring back to their anchor positions with center-of-gravity overshoot.
         </p>
       </div>
     </main>
