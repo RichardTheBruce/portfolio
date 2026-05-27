@@ -255,11 +255,11 @@ export function SiteStrings() {
         const isHovered = !isGrabbed && hover?.rope === ri;
         const nodes = rope.nodes;
         ctx.strokeStyle = isGrabbed
-          ? "rgba(61, 169, 252, 0.95)"
+          ? "rgba(61, 169, 252, 1)"
           : isHovered
-            ? "rgba(61, 169, 252, 0.7)"
-            : "rgba(30, 150, 230, 0.4)";
-        ctx.lineWidth = isGrabbed ? 1.6 * dpr : isHovered ? 1.2 * dpr : 0.85 * dpr;
+            ? "rgba(61, 169, 252, 0.85)"
+            : "rgba(30, 150, 230, 0.65)";
+        ctx.lineWidth = isGrabbed ? 1.8 * dpr : isHovered ? 1.4 * dpr : 1.1 * dpr;
         ctx.beginPath();
         let started = false;
         for (let i = 0; i < nodes.length; i++) {
@@ -295,6 +295,14 @@ export function SiteStrings() {
     resize();
     build();
 
+    // Re-build after layout settles so strings span the FULL document height,
+    // not just the early-paint height. Fonts + dynamic imports can land late.
+    const layoutSettleTimers = [
+      setTimeout(build, 250),
+      setTimeout(build, 1500),
+      setTimeout(build, 4000),
+    ];
+
     function onResize() {
       resize();
       build();
@@ -311,6 +319,7 @@ export function SiteStrings() {
     return () => {
       running = false;
       cancelAnimationFrame(raf);
+      layoutSettleTimers.forEach(clearTimeout);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("pointerdown", onPointerDown, { capture: true } as EventListenerOptions);
       window.removeEventListener("pointermove", onPointerMove);
@@ -323,7 +332,7 @@ export function SiteStrings() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-[1]"
+      className="pointer-events-none fixed inset-0 z-[20]"
       aria-hidden="true"
     />
   );
