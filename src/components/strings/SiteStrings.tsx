@@ -62,9 +62,14 @@ const STRINGS: StringDef[] = [
   { ax: 0.05, ay: 0.93, bx: 0.4, by: 0.95, nodes: 12 },
 ];
 
-const K_REST = 0.012;
-const K_EDGE = 0.22;
-const DAMPING = 0.93;
+// Physics tuned for water-like flow rather than crystalline punctures:
+//   - K_EDGE soft so the rope curves naturally instead of snapping back as line segments
+//   - DAMPING higher so motion persists longer (ripple-like)
+//   - Render uses quadratic bezier through midpoints so the visible line is a continuous
+//     smooth curve rather than connected straight segments
+const K_REST = 0.008;
+const K_EDGE = 0.09;
+const DAMPING = 0.965;
 const HIT_RADIUS_PX = 22;
 
 export function SiteStrings() {
@@ -260,23 +265,35 @@ export function SiteStrings() {
             ? "rgba(61, 169, 252, 0.85)"
             : "rgba(30, 150, 230, 0.65)";
         ctx.lineWidth = isGrabbed ? 1.8 * dpr : isHovered ? 1.4 * dpr : 1.1 * dpr;
-        ctx.beginPath();
-        let started = false;
-        for (let i = 0; i < nodes.length; i++) {
-          const n = nodes[i];
-          const cy = n.y - scrollY;
-          if (cy < -50 || cy > canvas.height + 50) {
-            started = false;
-            continue;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        // Smooth quadratic-bezier rendering through node midpoints.
+        // The actual node positions become bezier control points; the curve
+        // passes through the midpoints between consecutive nodes. Result: a
+        // continuous smooth curve instead of connected line segments.
+        if (nodes.length >= 2) {
+          ctx.beginPath();
+          const firstY = nodes[0].y - scrollY;
+          ctx.moveTo(nodes[0].x, firstY);
+          for (let i = 1; i < nodes.length - 1; i++) {
+            const a = nodes[i];
+            const b = nodes[i + 1];
+            const ay = a.y - scrollY;
+            const by = b.y - scrollY;
+            const mx = (a.x + b.x) * 0.5;
+            const my = (ay + by) * 0.5;
+            ctx.quadraticCurveTo(a.x, ay, mx, my);
           }
-          if (!started) {
-            ctx.moveTo(n.x, cy);
-            started = true;
-          } else {
-            ctx.lineTo(n.x, cy);
-          }
+          const lastIdx = nodes.length - 1;
+          const last = nodes[lastIdx];
+          const beforeLast = nodes[lastIdx - 1];
+          ctx.quadraticCurveTo(
+            beforeLast.x, beforeLast.y - scrollY,
+            last.x, last.y - scrollY,
+          );
+          ctx.stroke();
         }
-        ctx.stroke();
 
         ctx.fillStyle = "rgba(30, 150, 230, 0.7)";
         for (let i = 0; i < nodes.length; i++) {
