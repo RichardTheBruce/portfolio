@@ -18,12 +18,14 @@ export const COLOR = {
   amber: new THREE.Color(AMBER),
 };
 
-// Cycling tagline phrases for the line under the name (SPEC § Hero).
+// Cycling tagline phrases pulled from Richard's own work:
+//   1. "Understanding It All" (Medium, 2025)
+//   2. "On the Matter of Consciousness and Its Equivocation" (Rutgers, 2025) § VIII Conclusion
+//   3. Hermes Trismegistus, Emerald Tablet (cited in same paper § I Introduction)
 export const TAGLINE_PHRASES = [
-  "FOUNDER · NURO FINANCE",
-  "MASTER SCALAR PHYSICIST",
-  "STRINGS · PARTICLES · KEYS TO HEAVEN",
-  "HE WHO CREATES",
+  "PARTICLES ARE THE EMERGENT MECHANISMS OF PROBABILITY",
+  "FROM NOTHING, TO SOMETHING, TO ONE WITH EVERYTHING",
+  "AS ABOVE, SO BELOW",
 ] as const;
 
 // 0.8Hz pulse (SPEC § Hero accent letter).

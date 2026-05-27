@@ -51,6 +51,13 @@ export function Arc() {
           The work has always been the same. Find the linear paths. Find the oscillatory ones. Find the
           intercession points where probability collapses into the thing that has to ship.
         </p>
+
+        <p className="mono-caps mt-16 max-w-2xl text-[11px] leading-relaxed text-bone/40">
+          On the conscious mass classification (W(t) = f(M, E, S, f, λ, P, R)):
+          <span className="text-amber"> Class A — System-Generating Entrepreneur.</span> High and sustained output,
+          consistent directional spin across domains, multiple simultaneous system-generating ventures, trajectory
+          toward Class B as Nuro matures.
+        </p>
       </div>
     </section>
   );

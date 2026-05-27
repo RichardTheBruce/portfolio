@@ -3,10 +3,26 @@
 const links = [
   { label: "GitHub", href: "https://github.com/RichardTheBruce", mono: "GITHUB · RICHARDTHEBRUCE" },
   { label: "LinkedIn", href: "https://linkedin.com/in/richard-wayne-nuro", mono: "LINKEDIN · RICHARD-WAYNE-NURO" },
+  { label: "Medium", href: "https://medium.com/@richard_84017", mono: "MEDIUM · @RICHARD_84017" },
   {
     label: "Upwork",
     href: "https://www.upwork.com/services/product/development-it-you-will-get-your-own-personal-neural-net-custom-built-for-your-life-or-business-2054540114667442621",
     mono: "UPWORK · NEURAL NETS FOR EVERYTHING",
+  },
+];
+
+const papers = [
+  {
+    title: "On the Matter of Consciousness and Its Equivocation",
+    subtitle: "Toward a Physical Framework for the Properties of Conscious Mass",
+    href: "/papers/consciousness_mass_framework.pdf",
+    venue: "Rutgers, Department of Political Science (2025)",
+  },
+  {
+    title: "How State Overreach Drives Technological Innovation as a Form of Political Resistance",
+    subtitle: "Toward a Theory of Resistance Innovation Cycles",
+    href: "/papers/resistance_innovation_cycles.docx",
+    venue: "SSRN working paper (2025)",
   },
 ];
 
@@ -47,6 +63,26 @@ export function Reach() {
             </li>
           ))}
         </ul>
+
+        <div className="mt-20">
+          <p className="mono-caps mb-6 text-xs text-bone/40">Papers</p>
+          <ul className="grid gap-4">
+            {papers.map((p) => (
+              <li key={p.href}>
+                <a
+                  href={p.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block border-l-2 border-bone/15 py-3 pl-6 transition hover:border-amber"
+                >
+                  <p className="font-serif text-xl text-bone group-hover:text-amber">{p.title}</p>
+                  <p className="font-serif text-base italic text-bone/60">{p.subtitle}</p>
+                  <p className="mono-caps mt-2 text-[10px] text-bone/40">{p.venue}</p>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <div className="mt-24 flex items-center justify-between border-t border-bone/10 pt-6">
           <p className="mono-caps text-[10px] text-bone/30">

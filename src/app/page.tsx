@@ -4,13 +4,13 @@ import { WorkGraph } from "@/components/work/WorkGraph";
 import { ScalarField } from "@/components/math/ScalarField";
 import { Brain } from "@/components/brain/Brain";
 import { Reach } from "@/components/sections/Reach";
-import { GlobalStrings } from "@/components/strings/GlobalStrings";
+import { SiteStrings } from "@/components/strings/SiteStrings";
 import { ProbabilityEasterEgg } from "@/components/easter/Probability";
 
 export default function Page() {
   return (
     <main className="relative min-h-screen w-full">
-      <GlobalStrings />
+      <SiteStrings />
       <div className="relative z-10">
         <Hero />
         <Arc />
