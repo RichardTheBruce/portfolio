@@ -24,6 +24,8 @@ const REPEL_STRENGTH = 0.9;
 const BALL_RADIUS_PX = 4;
 const GRID_DIM = 10; // 10 x 10 = 100 dots
 const GRID_SPACING_PX = 22;
+const R_DOT_COUNT = 100;
+const R_FONT_PX = 320;
 
 export default function ExperimentOne() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -44,6 +46,70 @@ export default function ExperimentOne() {
     let mouseY = -9999;
     let mouseInside = false;
 
+    function sampleRDots(centerX: number, centerY: number): Dot[] {
+      const off = document.createElement("canvas");
+      const sz = Math.ceil(R_FONT_PX * dpr * 1.3);
+      off.width = sz;
+      off.height = sz;
+      const octx = off.getContext("2d");
+      if (!octx) return [];
+      octx.fillStyle = "#fff";
+      octx.textBaseline = "middle";
+      octx.textAlign = "center";
+      octx.font = `900 ${R_FONT_PX * dpr}px "Cormorant Garamond", Georgia, serif`;
+      octx.fillText("R", sz / 2, sz / 2);
+      const img = octx.getImageData(0, 0, sz, sz);
+
+      // First-pass count of alpha-positive cells, then stride to land ~100 dots.
+      let alphaCount = 0;
+      for (let y = 0; y < sz; y++) {
+        for (let x = 0; x < sz; x++) {
+          if (img.data[(y * sz + x) * 4 + 3] > 128) alphaCount++;
+        }
+      }
+      if (alphaCount === 0) return [];
+      const stride = Math.max(1, Math.floor(Math.sqrt(alphaCount / R_DOT_COUNT)));
+
+      const sampled: Dot[] = [];
+      for (let y = 0; y < sz && sampled.length < R_DOT_COUNT; y += stride) {
+        for (let x = 0; x < sz && sampled.length < R_DOT_COUNT; x += stride) {
+          if (img.data[(y * sz + x) * 4 + 3] > 128) {
+            const ax = centerX + (x - sz / 2);
+            const ay = centerY + (y - sz / 2);
+            sampled.push({ x: ax, y: ay, px: ax, py: ay, rx: ax, ry: ay });
+          }
+        }
+      }
+      return sampled;
+    }
+
+    function build() {
+      if (!canvas) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const cx = (w / 2) * dpr;
+      const cy = (h / 2) * dpr;
+
+      dots.length = 0;
+
+      // Layer 1: the 10x10 grid square (underneath).
+      const spacing = GRID_SPACING_PX * dpr;
+      const totalSpan = spacing * (GRID_DIM - 1);
+      const startX = cx - totalSpan / 2;
+      const startY = cy - totalSpan / 2;
+      for (let row = 0; row < GRID_DIM; row++) {
+        for (let col = 0; col < GRID_DIM; col++) {
+          const rxA = startX + col * spacing;
+          const ryA = startY + row * spacing;
+          dots.push({ x: rxA, y: ryA, px: rxA, py: ryA, rx: rxA, ry: ryA });
+        }
+      }
+
+      // Layer 2: capital R sampled from Cormorant Garamond Black, 100 dots,
+      // overlaid on top of the grid.
+      dots.push(...sampleRDots(cx, cy));
+    }
+
     function resize() {
       if (!canvas) return;
       const w = window.innerWidth;
@@ -52,22 +118,14 @@ export default function ExperimentOne() {
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-
-      // Rebuild the 10x10 grid centered on the viewport.
-      dots.length = 0;
-      const spacing = GRID_SPACING_PX * dpr;
-      const totalSpan = spacing * (GRID_DIM - 1);
-      const startX = (w / 2) * dpr - totalSpan / 2;
-      const startY = (h / 2) * dpr - totalSpan / 2;
-      for (let row = 0; row < GRID_DIM; row++) {
-        for (let col = 0; col < GRID_DIM; col++) {
-          const rxA = startX + col * spacing;
-          const ryA = startY + row * spacing;
-          dots.push({ x: rxA, y: ryA, px: rxA, py: ryA, rx: rxA, ry: ryA });
-        }
-      }
+      build();
     }
     resize();
+    // Re-sample once fonts have actually loaded (Cormorant Garamond Black
+    // doesn't ship system-side, so first paint can fall back to Georgia).
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(build);
+    }
 
     function onMove(e: PointerEvent) {
       const rect = canvas!.getBoundingClientRect();
@@ -152,9 +210,9 @@ export default function ExperimentOne() {
       />
       <div className="pointer-events-none absolute top-6 left-6">
         <p className="mono-caps text-[10px] text-bone/40">Experiment 01</p>
-        <p className="font-serif text-2xl text-bone/80">100-dot square, contact repulsion</p>
+        <p className="font-serif text-2xl text-bone/80">100-dot square + 100-dot R, contact repulsion</p>
         <p className="mono-caps mt-2 text-[10px] text-bone/30">
-          10×10 grid · spacing=22px · K_anchor=0.045 · damping=0.92 · repel_r=140px · strength=0.9
+          200 dots · grid 10×10 underneath · R sampled from Cormorant Black, 320px
         </p>
       </div>
       <div className="absolute bottom-6 left-6">
