@@ -76,19 +76,6 @@ export const projects: Project[] = [
     cluster: "frontend",
     size: "primary",
   },
-  {
-    id: "gblock",
-    name: "GBlock",
-    tagline: "He who creates.",
-    description: "The blog and identity surface. Where the work crystallizes into voice.",
-    role: "Author",
-    dates: "2024 to present",
-    stack: ["Writing"],
-    links: [{ label: "gblock.gg", href: "https://www.gblock.gg" }],
-    pull: "The voice behind the systems.",
-    cluster: "founder",
-    size: "secondary",
-  },
 ];
 
 export const projectsById = new Map(projects.map((p) => [p.id, p]));
@@ -96,9 +83,7 @@ export const projectsById = new Map(projects.map((p) => [p.id, p]));
 export const relationships: Array<{ source: string; target: string; weight: number }> = [
   { source: "nuro", target: "memetropolis", weight: 0.9 },
   { source: "nuro", target: "lineage", weight: 0.7 },
-  { source: "nuro", target: "gblock", weight: 0.5 },
   { source: "lineage", target: "2gather", weight: 0.4 },
-  { source: "memetropolis", target: "gblock", weight: 0.4 },
-  { source: "2gather", target: "gblock", weight: 0.3 },
-  { source: "lineage", target: "gblock", weight: 0.5 },
+  { source: "memetropolis", target: "2gather", weight: 0.3 },
+  { source: "lineage", target: "memetropolis", weight: 0.3 },
 ];

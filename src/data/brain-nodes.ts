@@ -70,7 +70,6 @@ export const brainNodes: BrainNode[] = [
   { id: "n_v_root", label: "He who creates", cluster: "voice", weight: 9 },
   { id: "n_v_founder", label: "Founder voice", cluster: "voice", weight: 6 },
   { id: "n_v_specific", label: "Specific over abstract", cluster: "voice", weight: 5 },
-  { id: "n_v_gblock", label: "GBlock", cluster: "voice", weight: 7 },
   { id: "n_v_linkedin", label: "richard-wayne-nuro", cluster: "voice", weight: 5 },
 
   { id: "n_m_agents", label: "Agent CRM", cluster: "mythos", weight: 7 },
@@ -146,7 +145,6 @@ export const brainEdges: BrainEdge[] = [
 
   { source: "n_v_root", target: "n_v_founder" },
   { source: "n_v_root", target: "n_v_specific" },
-  { source: "n_v_root", target: "n_v_gblock" },
   { source: "n_v_root", target: "n_v_linkedin" },
 
   { source: "n_v_root", target: "n_root" },

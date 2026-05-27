@@ -1,7 +1,6 @@
 "use client";
 
 const links = [
-  { label: "GBlock", href: "https://www.gblock.gg", mono: "GBLOCK.GG" },
   { label: "GitHub", href: "https://github.com/RichardTheBruce", mono: "GITHUB · RICHARDTHEBRUCE" },
   { label: "LinkedIn", href: "https://linkedin.com/in/richard-wayne-nuro", mono: "LINKEDIN · RICHARD-WAYNE-NURO" },
   {

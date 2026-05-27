@@ -79,16 +79,15 @@ A faint string-vector field is drawn behind, sparse, ~12 lines, low-opacity 8%.
 Source: `v0-1-interface-MASTER-desktop.png` (the typography rhythm), `Taste BABY/IMPORTANT_WAVE_OSCILLATION.jpg` (the string field skeleton).
 
 ### 3. Work — "Force graph of projects"
-Five project nodes laid out in a force-directed graph, EXACTLY like Richard's own Obsidian view but curated:
+Four project nodes laid out in a force-directed graph, EXACTLY like Richard's own Obsidian view but curated:
 - **Nuro Finance** (large hub node, accent amber)
 - **2gather** (mid node)
 - **Lineage** (mid node)
 - **Memetropolis** (mid node)
-- **GBlock** (mid node)
 
 Each node has a thumbnail (project shot or icon). Hovering a node:
 1. Brightens its blue strings to `--string-bright`
-2. Pulls all 4 other nodes' strings toward it, briefly tensioning the graph
+2. Pulls all 3 other nodes' strings toward it, briefly tensioning the graph
 3. Reveals a 1-sentence pull quote in JetBrains Mono caps to the right
 
 Clicking opens a deep card: large project shot, role, dates, tech stack, link to repo or live site.
@@ -118,7 +117,7 @@ Nodes are sized by backlink count. Colors map to project (Nuro = amber, 2gather 
 Source: `Taste BABY/Important26.png` is the literal target visual. We're recreating that exact graph aesthetic in-browser.
 
 ### 6. Reach — "The tying off"
-Footer where all the strings converge. Single line of links: GBlock, GitHub (RichardTheBruce), LinkedIn (richard-wayne-nuro), Upwork (catalog 2054540114667442621). Each link is a node terminating one of the strings from above.
+Footer where all the strings converge. Single line of links: GitHub (RichardTheBruce), LinkedIn (richard-wayne-nuro), Upwork (catalog 2054540114667442621). Each link is a node terminating one of the strings from above.
 
 ### Easter egg — "14-DIMENSIONAL"
 Triggered by Konami code or by clicking the `(2, 7, 19)` numerals five times. Page background flips to your synthwave palette (magenta + cyan, magenta perspective grid floor) and plays your "PROBABILITY WAVEFORM HRM" treatment.
@@ -148,7 +147,7 @@ Source: `Taste BABY/Important22.png` — the synthwave control panel is your own
 ## Out of scope for v1
 
 - AGI Terminal section (intentionally blank slot per Richard's note)
-- Blog posts under the portfolio (those live at gblock.gg already)
+- Blog posts under the portfolio (out of scope for v1, may revisit later)
 - Contact form (replaced by links to Upwork + LinkedIn + email)
 - Dark/light mode toggle (we are dark only — INTERFACE-style commitment)
 - i18n
