@@ -29,6 +29,43 @@ const CLUSTER_COLOR: Record<Project["cluster"], string> = {
   infra: "#1E96E6",
 };
 
+// IMPORTANT6 / Important1 vector burst aesthetic: loose blue lines radiating
+// asymmetrically from a central anchor, like a comet trail or angel wing
+// caught mid-flight. Renders behind the work-graph at very low opacity.
+function BurstLines() {
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.18]"
+      viewBox="0 0 1000 1000"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      <g stroke="#1E96E6" strokeWidth="0.7" fill="none">
+        <line x1="500" y1="500" x2="80" y2="120" />
+        <line x1="500" y1="500" x2="60" y2="280" />
+        <line x1="500" y1="500" x2="90" y2="480" />
+        <line x1="500" y1="500" x2="70" y2="720" />
+        <line x1="500" y1="500" x2="120" y2="900" />
+        <line x1="500" y1="500" x2="280" y2="60" />
+        <line x1="500" y1="500" x2="500" y2="40" />
+        <line x1="500" y1="500" x2="720" y2="50" />
+        <line x1="500" y1="500" x2="920" y2="80" />
+        <line x1="500" y1="500" x2="940" y2="260" />
+        <line x1="500" y1="500" x2="950" y2="460" />
+        <line x1="500" y1="500" x2="930" y2="660" />
+        <line x1="500" y1="500" x2="900" y2="880" />
+        <line x1="500" y1="500" x2="700" y2="940" />
+        <line x1="500" y1="500" x2="500" y2="960" />
+        <line x1="500" y1="500" x2="320" y2="920" />
+        <line x1="200" y1="200" x2="800" y2="800" />
+        <line x1="800" y1="200" x2="200" y2="800" />
+        <line x1="100" y1="500" x2="900" y2="500" />
+        <line x1="500" y1="100" x2="500" y2="900" />
+      </g>
+    </svg>
+  );
+}
+
 export function WorkGraph() {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -80,12 +117,19 @@ export function WorkGraph() {
   const selectedProject = selectedId ? projects.find((p) => p.id === selectedId) ?? null : null;
 
   return (
-    <section className="relative flex w-full flex-col items-center bg-ink px-6 py-32 md:px-16">
-      <div className="mb-16 max-w-4xl text-center">
+    <section className="relative flex w-full flex-col items-center overflow-hidden bg-ink px-6 py-32 md:px-16">
+      <BurstLines />
+
+      <div className="relative z-10 mb-16 max-w-4xl text-center">
         <p className="mono-caps mb-4 text-xs text-bone/40">The work</p>
         <h2 className="serif-display text-5xl text-bone md:text-7xl">
-          Four projects. One graph. <span className="amber-glow">Pull</span> on any node.
+          Each project is a Stage 4 <span className="amber-glow">rebound</span>.
         </h2>
+        <p className="mt-6 max-w-2xl mx-auto font-sans text-base text-bone/60">
+          Per the resistance innovation cycle: institutional collapse produces a counter-form whose
+          architecture is the inverse of the collapse inputs. Pull any node to see what each project
+          inverts.
+        </p>
       </div>
 
       <div className="relative w-full max-w-6xl">
@@ -186,6 +230,14 @@ export function WorkGraph() {
             <p className="mt-6 font-sans text-base leading-relaxed text-bone/80">
               {selectedProject.description}
             </p>
+
+            <div className="mt-8 border-l-2 border-amber/60 pl-5">
+              <p className="mono-caps mb-1 text-[10px] text-amber/80">Rebound to</p>
+              <p className="font-serif text-lg italic text-bone/80">{selectedProject.rebound.collapse}</p>
+              <p className="mt-3 mono-caps text-[10px] text-bone/40">Inversion</p>
+              <p className="font-sans text-sm leading-relaxed text-bone/70">{selectedProject.rebound.inversion}</p>
+            </div>
+
             <p className="mono-caps mt-8 text-[10px] text-bone/40">{selectedProject.dates}</p>
             <ul className="mt-3 flex flex-wrap gap-2">
               {selectedProject.stack.map((s) => (

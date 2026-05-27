@@ -10,6 +10,10 @@ export type Project = {
   pull: string;
   cluster: "founder" | "frontend" | "research" | "infra";
   size: "hub" | "primary" | "secondary";
+  rebound: {
+    collapse: string;
+    inversion: string;
+  };
 };
 
 export const projects: Project[] = [
@@ -28,6 +32,11 @@ export const projects: Project[] = [
     pull: "23 chains. One agent. Visa-grade rails.",
     cluster: "founder",
     size: "hub",
+    rebound: {
+      collapse: "Captured institutional finance, 2008 onward",
+      inversion:
+        "Opacity → on-chain transparency. Centralization → 23 distributed chains. Trusted intermediaries → cryptographic proof. Engineered incomprehensibility → mathematically verifiable rules.",
+    },
   },
   {
     id: "memetropolis",
@@ -47,6 +56,11 @@ export const projects: Project[] = [
     pull: "The math of the strings.",
     cluster: "infra",
     size: "primary",
+    rebound: {
+      collapse: "Captured token launch market (rugpulls, opaque tokenomics, intermediary risk)",
+      inversion:
+        "OFT standard cross-chain settlement. Transparent on-chain mechanics. Patterns now feeding the Nuro Finance bridge layer.",
+    },
   },
   {
     id: "2gather",
@@ -61,6 +75,11 @@ export const projects: Project[] = [
     pull: "Four sprints. One day. Shipped.",
     cluster: "frontend",
     size: "primary",
+    rebound: {
+      collapse: "Algorithmic attention economy of captured social networks",
+      inversion:
+        "Invite-only membership. Real-world events, not infinite feed. Member-owned graph, not platform-extracted.",
+    },
   },
   {
     id: "lineage",
@@ -75,6 +94,11 @@ export const projects: Project[] = [
     pull: "The intake is the first delivery.",
     cluster: "frontend",
     size: "primary",
+    rebound: {
+      collapse: "Generic-AI consulting market (opaque outputs, customer-owned-nothing)",
+      inversion:
+        "Each client receives their own portable neural net vault. Their data, their agents, their continuity. The intake itself is the first delivery.",
+    },
   },
 ];
 
