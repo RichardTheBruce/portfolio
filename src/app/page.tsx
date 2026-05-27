@@ -2,6 +2,7 @@ import { Hero } from "@/components/hero/Hero";
 import { Arc } from "@/components/sections/Arc";
 import { WorkGraph } from "@/components/work/WorkGraph";
 import { ScalarField } from "@/components/math/ScalarField";
+import { Framework } from "@/components/framework/Framework";
 import { Brain } from "@/components/brain/Brain";
 import { Reach } from "@/components/sections/Reach";
 import { SiteStrings } from "@/components/strings/SiteStrings";
@@ -16,6 +17,7 @@ export default function Page() {
         <Arc />
         <WorkGraph />
         <ScalarField />
+        <Framework />
         <Brain />
         <Reach />
       </div>
