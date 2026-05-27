@@ -39,36 +39,58 @@ function buildSquareGrid(cx: number, cy: number, dpr: number): Dot[] {
 }
 
 function buildCapitalR(cx: number, cy: number, dpr: number): Dot[] {
-  const R_DOT_COUNT = 100;
-  const R_FONT_PX = 320;
+  return buildText("R", 100, 320, cx, cy, dpr);
+}
+
+function buildRichard(cx: number, cy: number, dpr: number): Dot[] {
+  // ~60 dots per letter × 7 letters = 420 target so each letter reads.
+  return buildText("Richard", 420, 180, cx, cy, dpr);
+}
+
+function buildText(
+  text: string,
+  targetDots: number,
+  fontPx: number,
+  cx: number,
+  cy: number,
+  dpr: number,
+): Dot[] {
   const off = document.createElement("canvas");
-  const sz = Math.ceil(R_FONT_PX * dpr * 1.3);
-  off.width = sz;
-  off.height = sz;
+  // Measure the word's width first so the offscreen canvas fits it.
+  const probeCtx = document.createElement("canvas").getContext("2d");
+  if (!probeCtx) return [];
+  probeCtx.font = `900 ${fontPx * dpr}px "Cormorant Garamond", Georgia, serif`;
+  const wordWidth = probeCtx.measureText(text).width;
+  const padX = 40 * dpr;
+  const padY = 40 * dpr;
+  const w = Math.ceil(wordWidth + padX * 2);
+  const h = Math.ceil(fontPx * dpr * 1.4 + padY * 2);
+  off.width = w;
+  off.height = h;
   const octx = off.getContext("2d");
   if (!octx) return [];
   octx.fillStyle = "#fff";
   octx.textBaseline = "middle";
   octx.textAlign = "center";
-  octx.font = `900 ${R_FONT_PX * dpr}px "Cormorant Garamond", Georgia, serif`;
-  octx.fillText("R", sz / 2, sz / 2);
-  const img = octx.getImageData(0, 0, sz, sz);
+  octx.font = `900 ${fontPx * dpr}px "Cormorant Garamond", Georgia, serif`;
+  octx.fillText(text, w / 2, h / 2);
+  const img = octx.getImageData(0, 0, w, h);
 
   let alphaCount = 0;
-  for (let y = 0; y < sz; y++) {
-    for (let x = 0; x < sz; x++) {
-      if (img.data[(y * sz + x) * 4 + 3] > 128) alphaCount++;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (img.data[(y * w + x) * 4 + 3] > 128) alphaCount++;
     }
   }
   if (alphaCount === 0) return [];
-  const stride = Math.max(1, Math.floor(Math.sqrt(alphaCount / R_DOT_COUNT)));
+  const stride = Math.max(1, Math.floor(Math.sqrt(alphaCount / targetDots)));
 
   const sampled: Dot[] = [];
-  for (let y = 0; y < sz && sampled.length < R_DOT_COUNT; y += stride) {
-    for (let x = 0; x < sz && sampled.length < R_DOT_COUNT; x += stride) {
-      if (img.data[(y * sz + x) * 4 + 3] > 128) {
-        const ax = cx + (x - sz / 2);
-        const ay = cy + (y - sz / 2);
+  for (let y = 0; y < h && sampled.length < targetDots; y += stride) {
+    for (let x = 0; x < w && sampled.length < targetDots; x += stride) {
+      if (img.data[(y * w + x) * 4 + 3] > 128) {
+        const ax = cx + (x - w / 2);
+        const ay = cy + (y - h / 2);
         sampled.push({ x: ax, y: ay, px: ax, py: ay, rx: ax, ry: ay });
       }
     }
@@ -223,6 +245,13 @@ export default function Experiments() {
         title="100-dot capital R, contact repulsion"
         meta="100 dots sampled from Cormorant Black, 320px · same per-dot physics"
         buildDots={buildCapitalR}
+        waitForFonts
+      />
+      <ExperimentBlock
+        index="Experiment 03"
+        title="Richard, written in dots"
+        meta="420 dots sampled from Cormorant Black, 180px · ~60 dots per letter so each one reads"
+        buildDots={buildRichard}
         waitForFonts
       />
       <div className="fixed bottom-6 left-6 z-10">
