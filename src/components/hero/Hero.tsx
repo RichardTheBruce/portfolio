@@ -15,7 +15,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Tagline } from "./Tagline";
 
-type Variant = "A" | "B" | "C" | "D";
+type Variant = "A" | "B" | "C" | "D" | "E";
 
 // We dynamically import all four so the build can tree-shake the unselected ones.
 // The host page imports Hero with a `variant` prop; the variants live in separate
@@ -36,6 +36,10 @@ const ParticleFieldD = dynamic(() => import("./ParticleFieldVariantD"), {
   ssr: false,
   loading: () => null,
 });
+const ParticleFieldE = dynamic(() => import("./ParticleFieldVariantE"), {
+  ssr: false,
+  loading: () => null,
+});
 
 const WORD = "RichardTheBruce";
 const ACCENT_INDEX = 0; // R per SPEC § Hero "amber R in Richard"
@@ -44,7 +48,7 @@ export interface HeroProps {
   variant?: Variant;
 }
 
-export function Hero({ variant = "D" }: HeroProps) {
+export function Hero({ variant = "E" }: HeroProps) {
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -59,7 +63,8 @@ export function Hero({ variant = "D" }: HeroProps) {
     variant === "A" ? ParticleFieldA :
     variant === "B" ? ParticleFieldB :
     variant === "C" ? ParticleFieldC :
-    ParticleFieldD;
+    variant === "D" ? ParticleFieldD :
+    ParticleFieldE;
 
   return (
     <section
