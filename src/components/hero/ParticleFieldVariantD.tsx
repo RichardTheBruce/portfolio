@@ -44,14 +44,19 @@ type GraphNode = {
   rx: number;
   ry: number;
   letter: number;
+  seed: number; // per-particle phase for ambient buoyancy
+  weight: number; // per-particle "specific gravity" multiplier on rest spring
 };
 
 type Edge = [number, number, number]; // [aIdx, bIdx, restLength]
 
 // Physics constants.
-const K_REST = 0.022; // rest-position pull (gentle)
-const K_EDGE = 0.06; // edge spring (firmer, holds letterform)
-const DAMPING = 0.94; // velocity damping per frame (under-damped → buoyant overshoot)
+const K_REST_BASE = 0.018; // rest-position pull (soft; varies per particle via weight)
+const K_EDGE = 0.05; // edge spring (holds letterform, slightly softer than v1)
+const DAMPING = 0.95; // velocity damping per frame (under-damped → ongoing oscillation)
+const NOISE_AMPLITUDE = 0.085; // pixels-per-frame² force amplitude for ambient drift
+const NOISE_FREQ_X = 0.00065; // slow horizontal drift (rad / ms)
+const NOISE_FREQ_Y = 0.00091; // slightly faster vertical drift, different frequency for natural look
 const HIT_RADIUS_PX = 18;
 const MAX_NEIGHBORS_PER_NODE = 3;
 
@@ -134,6 +139,8 @@ export default function ParticleFieldVariantD({
             }
             sampledRaw.push({
               x, y, px: x, py: y, rx: x, ry: y, letter,
+              seed: Math.random(),
+              weight: 0.7 + Math.random() * 0.6, // 0.7 to 1.3 — varied "specific gravity"
             });
           }
         }
@@ -273,12 +280,21 @@ export default function ParticleFieldVariantD({
       if (!reducedMotion) {
         const fx = new Float32Array(nodes.length);
         const fy = new Float32Array(nodes.length);
+        const now = performance.now();
 
-        // Rest-position spring.
+        // Per-particle ambient buoyancy (noise force) + rest-position spring.
+        // Each particle has its own seed, so the field has texture instead of
+        // synchronized motion. The "specific gravity" weight varies the rest
+        // spring per particle so they settle at slightly different cadences.
         for (let i = 0; i < nodes.length; i++) {
           if (i === grabbedIdx) continue;
-          fx[i] += (nodes[i].rx - nodes[i].x) * K_REST;
-          fy[i] += (nodes[i].ry - nodes[i].y) * K_REST;
+          const n = nodes[i];
+          const phase = n.seed * Math.PI * 2;
+          fx[i] += Math.sin(now * NOISE_FREQ_X + phase) * NOISE_AMPLITUDE;
+          fy[i] += Math.cos(now * NOISE_FREQ_Y + phase * 1.7) * NOISE_AMPLITUDE;
+          const kRest = K_REST_BASE * n.weight;
+          fx[i] += (n.rx - n.x) * kRest;
+          fy[i] += (n.ry - n.y) * kRest;
         }
 
         // Edge springs (Hooke).
