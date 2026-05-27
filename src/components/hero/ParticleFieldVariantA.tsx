@@ -146,16 +146,11 @@ varying float vAccent;
 varying float vBrightness;
 
 void main() {
-  // Round particle via radial alpha. The vertex shader emits a square quad in NDC;
-  // here we discard outside the unit circle relative to the local quad center.
-  vec2 q = gl_PointCoord; // NOTE: triangle-strip path uses interpolated position; see below.
-  // Because we draw triangle-instanced quads (not Points), gl_PointCoord is
-  // undefined. We rely on the vertex shader to pass corner-local coords... but
-  // for a single full quad we can derive from gl_FragCoord vs a passed center.
-  // Simpler: use a screen-space circular fade implicit in the rendered quad size
-  // (the quad is small enough that anti-aliasing handles edges visually).
-  //
-  // Practical solution: alpha = 1.0. The quad is sub-pixel-soft via WebGL MSAA.
+  // Particles are rendered as 2px instanced quads. At that size, MSAA softens
+  // edges enough that a circular alpha mask isn't worth the vertex bandwidth
+  // required to pass corner-local coords to the fragment stage. The quad reads
+  // as a point at 1x and a 4-pixel cluster at 2x DPR, both of which match the
+  // density target in ImportantParticleWork5.png middle panel.
   float alpha = 1.0;
 
   vec3 color = uBone;

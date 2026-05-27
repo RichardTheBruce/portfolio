@@ -1,4 +1,4 @@
-import { Hero } from "@/components/sections/Hero";
+import { Hero } from "@/components/hero/Hero";
 import { Arc } from "@/components/sections/Arc";
 import { WorkGraph } from "@/components/work/WorkGraph";
 import { ScalarField } from "@/components/math/ScalarField";
