@@ -155,9 +155,9 @@ export function Framework() {
       const baseR = (10 + vals.M * 30) * dpr;
       const halo = baseR * (2.4 + vals.E * 1.6);
       const grad = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, halo);
-      const lamHue = lerpColor("#3DA9FC", "#C97D3E", vals.lambda);
-      grad.addColorStop(0, `${lamHue}`);
-      grad.addColorStop(0.3, `${lamHue}80`);
+      const lamRgb = lerpColor("#3DA9FC", "#C97D3E", vals.lambda);
+      grad.addColorStop(0, `rgba(${lamRgb}, 0.95)`);
+      grad.addColorStop(0.3, `rgba(${lamRgb}, 0.45)`);
       grad.addColorStop(1, "rgba(10,10,11,0)");
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -169,7 +169,7 @@ export function Framework() {
       ctx.arc(cx, cy, baseR * 0.55, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = lamHue;
+      ctx.strokeStyle = `rgb(${lamRgb})`;
       ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
       ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
@@ -251,14 +251,15 @@ export function Framework() {
   );
 }
 
-// Linear interpolation between two hex colors.
+// Linear interpolation between two hex colors. Returns "r, g, b" so the caller
+// can wrap with `rgb(...)` or `rgba(..., alpha)` as needed.
 function lerpColor(a: string, b: string, t: number): string {
   const pa = hexToRgb(a);
   const pb = hexToRgb(b);
   const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
   const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
   const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
-  return `rgb(${r}, ${g}, ${bl})`;
+  return `${r}, ${g}, ${bl}`;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
