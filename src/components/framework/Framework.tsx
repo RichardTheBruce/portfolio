@@ -115,64 +115,168 @@ export function Framework() {
       const cy = h / 2;
       const t = performance.now() * 0.001;
 
-      // Burst lines (Important1 / Important6 vector star aesthetic).
-      // Number and length scale with M and E.
-      const burstCount = Math.round(8 + vals.M * 14);
-      const burstLen = (60 + vals.E * 120) * dpr;
-      ctx.strokeStyle = `rgba(30, 150, 230, ${0.18 + vals.lambda * 0.25})`;
-      ctx.lineWidth = 0.7 * dpr;
-      const spinRate = (vals.S - 0.5) * 0.4;
+      // ============================================================
+      // CONSCIOUS-MASS TENSOR
+      // Built per Richard's Reality_Tensors catalog
+      // (OneDrive/Desktop/Taste BABY/Focus/Important3.jpg, Important7.jpg)
+      // and the Holographic_Dimensional_Computer (Important9.jpg, Important20.png).
+      //
+      // The seven W(t) sliders compose the tensor's structure:
+      //   M (mass)        → number of perimeter vertices (8 → 32) + chord density
+      //   E (output)      → brightness of all lines + ray length past perimeter
+      //   S (spin)        → rotation rate of the inner tensor assembly
+      //   f (freq)        → pulse frequency on nucleus + tightness of inner shell
+      //   λ (wavelength)  → color blend from string-blue toward amber for the rim
+      //   P (probability) → outer probability halo radius
+      //   R (resonance)   → number + brightness of concentric outer rings
+      // ============================================================
+
+      const M = vals.M;
+      const E = vals.E;
+      const spin = (vals.S - 0.5) * 0.6;
+      const fHz = 0.4 + vals.f * 3.2;
+      const lam = vals.lambda;
+      const P = vals.P;
+      const R = vals.R;
+
+      const perimVerts = Math.max(6, Math.round(8 + M * 24));
+      const perimR = (44 + M * 78) * dpr;
+      const haloR = perimR * (1.5 + P * 1.4);
+      const nucleusR = (6 + M * 14) * dpr;
+      const rayLen = perimR * (1.1 + E * 0.7);
+      const innerShellR = perimR * (0.42 + 0.08 * Math.sin(t * fHz * Math.PI * 2));
+      const chordCount = Math.max(0, Math.round(M * 10));
+
+      const lamRgb = lerpColor("#3DA9FC", "#C97D3E", lam);
+      const bluRgb = lerpColor("#1E96E6", "#3DA9FC", E);
+      const energy = 0.45 + E * 0.55;
+
+      // 1. Probability halo (outermost soft gradient).
+      const haloGrad = ctx.createRadialGradient(cx, cy, perimR * 0.6, cx, cy, haloR);
+      haloGrad.addColorStop(0, "rgba(10, 10, 11, 0)");
+      haloGrad.addColorStop(0.5, `rgba(${bluRgb}, ${0.06 + P * 0.12})`);
+      haloGrad.addColorStop(1, "rgba(10, 10, 11, 0)");
+      ctx.fillStyle = haloGrad;
       ctx.beginPath();
-      for (let i = 0; i < burstCount; i++) {
-        const a = (i / burstCount) * Math.PI * 2 + t * spinRate;
-        const x1 = cx + Math.cos(a) * (12 * dpr);
-        const y1 = cy + Math.sin(a) * (12 * dpr);
-        const x2 = cx + Math.cos(a) * burstLen;
-        const y2 = cy + Math.sin(a) * burstLen;
+      ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Resonance concentric rings (R) — count and brightness scale with R.
+      const ringCount = Math.max(1, Math.round(2 + R * 5));
+      for (let i = 0; i < ringCount; i++) {
+        const ringR_i = perimR * (1.12 + i * 0.08 * (1 + P));
+        const a = 0.35 - i * 0.05;
+        ctx.strokeStyle = `rgba(${bluRgb}, ${Math.max(0.05, a * (0.4 + R * 0.6))})`;
+        ctx.lineWidth = (0.5 + (R > 0.5 ? 0.3 : 0)) * dpr;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ringR_i, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Save context, apply spin rotation to the inner tensor assembly.
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * spin);
+
+      // 3. Outgoing rays beyond the perimeter (Important9 Holographic Dimensional
+      // Computer beams). One per perimeter vertex, length scales with E.
+      ctx.strokeStyle = `rgba(${bluRgb}, ${0.25 + E * 0.45})`;
+      ctx.lineWidth = 0.7 * dpr;
+      ctx.beginPath();
+      for (let i = 0; i < perimVerts; i++) {
+        const a = (i / perimVerts) * Math.PI * 2;
+        const x1 = Math.cos(a) * perimR;
+        const y1 = Math.sin(a) * perimR;
+        const x2 = Math.cos(a) * rayLen;
+        const y2 = Math.sin(a) * rayLen;
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
       }
       ctx.stroke();
 
-      // Probability-space ring.
-      const ringR = (40 + vals.P * 80) * dpr;
-      ctx.strokeStyle = "rgba(245, 242, 236, 0.15)";
-      ctx.lineWidth = 0.8 * dpr;
+      // 4. Radial spokes from perimeter to center (the tensor's internal axes).
+      ctx.strokeStyle = `rgba(${bluRgb}, ${0.42 * energy})`;
+      ctx.lineWidth = 0.6 * dpr;
       ctx.beginPath();
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      for (let i = 0; i < perimVerts; i++) {
+        const a = (i / perimVerts) * Math.PI * 2;
+        const x = Math.cos(a) * perimR;
+        const y = Math.sin(a) * perimR;
+        ctx.moveTo(0, 0);
+        ctx.lineTo(x, y);
+      }
       ctx.stroke();
 
-      // Resonance ring (R) — pulses at frequency f.
-      const pulse = 0.5 + 0.5 * Math.sin(t * (1 + vals.f * 4) * Math.PI);
-      const rRingR = ringR * (0.65 + 0.1 * pulse);
-      ctx.strokeStyle = `rgba(61, 169, 252, ${0.2 + vals.R * 0.5})`;
-      ctx.lineWidth = (0.8 + vals.R * 1.2) * dpr;
+      // 5. Cross-chords through the center (the tensor's wave function).
+      // Each chord connects vertex i to vertex (i + stride) % N. Stride varies
+      // so the chord set looks like an inscribed-star pattern.
+      ctx.strokeStyle = `rgba(${bluRgb}, ${0.55 * energy})`;
+      ctx.lineWidth = 0.6 * dpr;
       ctx.beginPath();
-      ctx.arc(cx, cy, rRingR, 0, Math.PI * 2);
+      for (let c = 0; c < chordCount; c++) {
+        const stride = Math.max(2, Math.floor(perimVerts * 0.4) - c);
+        for (let i = 0; i < perimVerts; i++) {
+          const a1 = (i / perimVerts) * Math.PI * 2;
+          const a2 = ((i + stride) / perimVerts) * Math.PI * 2;
+          const x1 = Math.cos(a1) * perimR;
+          const y1 = Math.sin(a1) * perimR;
+          const x2 = Math.cos(a2) * perimR;
+          const y2 = Math.sin(a2) * perimR;
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+      }
       ctx.stroke();
 
-      // Central conscious-mass body.
-      const baseR = (10 + vals.M * 30) * dpr;
-      const halo = baseR * (2.4 + vals.E * 1.6);
-      const grad = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, halo);
-      const lamRgb = lerpColor("#3DA9FC", "#C97D3E", vals.lambda);
-      grad.addColorStop(0, `rgba(${lamRgb}, 0.95)`);
-      grad.addColorStop(0.3, `rgba(${lamRgb}, 0.45)`);
-      grad.addColorStop(1, "rgba(10,10,11,0)");
-      ctx.fillStyle = grad;
+      // 6. Inner shell (oscillates with f — the decay frequency).
+      ctx.strokeStyle = `rgba(${lamRgb}, ${0.5 + 0.3 * Math.sin(t * fHz * Math.PI * 2)})`;
+      ctx.lineWidth = 0.9 * dpr;
       ctx.beginPath();
-      ctx.arc(cx, cy, halo, 0, Math.PI * 2);
+      for (let i = 0; i < perimVerts; i++) {
+        const a = (i / perimVerts) * Math.PI * 2;
+        const x = Math.cos(a) * innerShellR;
+        const y = Math.sin(a) * innerShellR;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // 7. Perimeter vertex nodes — rim-lit, scaled by M.
+      const vertR = (1.8 + M * 2.5) * dpr;
+      for (let i = 0; i < perimVerts; i++) {
+        const a = (i / perimVerts) * Math.PI * 2;
+        const x = Math.cos(a) * perimR;
+        const y = Math.sin(a) * perimR;
+        ctx.fillStyle = `rgba(${bluRgb}, ${0.85 * energy})`;
+        ctx.beginPath();
+        ctx.arc(x, y, vertR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      // 8. Central nucleus (rim-lit, color = λ).
+      const nucPulse = 0.7 + 0.3 * Math.sin(t * fHz * Math.PI * 2);
+      const nucleusHalo = nucleusR * (2.6 + E * 1.8);
+      const nucGrad = ctx.createRadialGradient(cx, cy, nucleusR * 0.3, cx, cy, nucleusHalo);
+      nucGrad.addColorStop(0, `rgba(${lamRgb}, ${0.95 * nucPulse})`);
+      nucGrad.addColorStop(0.4, `rgba(${lamRgb}, ${0.35 * nucPulse})`);
+      nucGrad.addColorStop(1, "rgba(10, 10, 11, 0)");
+      ctx.fillStyle = nucGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, nucleusHalo, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "rgba(10, 10, 11, 1)";
       ctx.beginPath();
-      ctx.arc(cx, cy, baseR * 0.55, 0, Math.PI * 2);
+      ctx.arc(cx, cy, nucleusR * 0.55, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.strokeStyle = `rgb(${lamRgb})`;
-      ctx.lineWidth = 1.5 * dpr;
+      ctx.lineWidth = (1.4 + 0.4 * nucPulse) * dpr;
       ctx.beginPath();
-      ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+      ctx.arc(cx, cy, nucleusR, 0, Math.PI * 2);
       ctx.stroke();
 
       raf = requestAnimationFrame(draw);
