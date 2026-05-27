@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Inter, JetBrains_Mono } from "next/font/google";
+import { LenisProvider } from "@/components/scroll/LenisProvider";
 import "./globals.css";
 
 const cormorant = Cormorant_Garamond({
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${cormorant.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-ink text-bone font-sans antialiased selection:bg-amber/30">
-        {children}
+        <LenisProvider>{children}</LenisProvider>
       </body>
     </html>
   );
