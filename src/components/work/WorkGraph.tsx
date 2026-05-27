@@ -84,7 +84,7 @@ export function WorkGraph() {
       <div className="mb-16 max-w-4xl text-center">
         <p className="mono-caps mb-4 text-xs text-bone/40">The work</p>
         <h2 className="serif-display text-5xl text-bone md:text-7xl">
-          Five projects. One graph. <span className="amber-glow">Pull</span> on any node.
+          Four projects. One graph. <span className="amber-glow">Pull</span> on any node.
         </h2>
       </div>
 
