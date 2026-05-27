@@ -21,7 +21,7 @@ const ANCHOR_SPRING_K = 0.045;
 const DAMPING = 0.92;
 const REPEL_RADIUS_PX = 140;
 const REPEL_STRENGTH = 0.9;
-const BALL_RADIUS_PX = 28;
+const BALL_RADIUS_PX = 6;
 
 export default function ExperimentOne() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -108,33 +108,10 @@ export default function ExperimentOne() {
       x += vx + fx;
       y += vy + fy;
 
-      // Render the ball: ink core, cyan rim ring, soft outer halo.
-      const baseR = BALL_RADIUS_PX * dpr;
-      const haloR = baseR * 2.6;
-      const grad = ctx.createRadialGradient(x, y, baseR * 0.3, x, y, haloR);
-      grad.addColorStop(0, "rgba(61, 169, 252, 0.95)");
-      grad.addColorStop(0.4, "rgba(30, 150, 230, 0.35)");
-      grad.addColorStop(1, "rgba(10, 10, 11, 0)");
-      ctx.fillStyle = grad;
+      // Render: single solid blue dot. No border, no halo, no anchor mark.
+      ctx.fillStyle = "#1E96E6";
       ctx.beginPath();
-      ctx.arc(x, y, haloR, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "rgba(10, 10, 11, 1)";
-      ctx.beginPath();
-      ctx.arc(x, y, baseR * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(61, 169, 252, 1)";
-      ctx.lineWidth = 1.8 * dpr;
-      ctx.beginPath();
-      ctx.arc(x, y, baseR, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Tiny tick mark at the anchor point so you can see where it's pulling to.
-      ctx.fillStyle = "rgba(245, 242, 236, 0.25)";
-      ctx.beginPath();
-      ctx.arc(rx, ry, 2 * dpr, 0, Math.PI * 2);
+      ctx.arc(x, y, BALL_RADIUS_PX * dpr, 0, Math.PI * 2);
       ctx.fill();
 
       raf = requestAnimationFrame(step);
