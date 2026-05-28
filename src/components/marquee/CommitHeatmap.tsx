@@ -22,7 +22,7 @@ const BG_COLOR = "#0A0A0B";
 
 // GitHub dark-theme contribution palette.
 const TIER_COLORS = [
-  0x161b22, // 0 commits — almost ink
+  0x161b22, // 0 commits, almost ink
   0x0e4429, // 1–3
   0x006d32, // 4–7
   0x26a641, // 8–15
@@ -59,9 +59,9 @@ function generateCommits2026(): number[] {
   const months: [number, number, number, number][] = [
     [0, 30, 0.25, 1.5], // Jan
     [31, 58, 0.30, 2], // Feb
-    [59, 89, 0.88, 11], // Mar — ramp begins
-    [90, 119, 0.95, 16], // Apr — peak
-    [120, 150, 0.85, 11], // May — tapering off
+    [59, 89, 0.88, 11], // Mar, ramp begins
+    [90, 119, 0.95, 16], // Apr, peak
+    [120, 150, 0.85, 11], // May, tapering off
     [151, 180, 0.28, 2], // Jun
     [181, 211, 0.25, 1.5], // Jul
     [212, 242, 0.22, 1.2], // Aug
@@ -251,7 +251,7 @@ function HeatmapField({
               // R3F's <points> emits a Points<NormalOrGLBufferAttributes>;
               // we keep our array as the narrower THREE.Points type so the
               // useFrame loop can talk to .geometry.attributes.position
-              // without the union dance. Safe — we never touch GL-only attrs.
+              // without the union dance. Safe, we never touch GL-only attrs.
               pointsRefs.current[tier] = el as unknown as THREE.Points | null;
             }}
             material={materials[tier]}
@@ -370,9 +370,6 @@ export function CommitHeatmap() {
         <span className="mono-caps text-[10px] text-bone/35">More</span>
       </div>
 
-      <p className="pointer-events-none absolute bottom-8 left-1/2 z-10 -translate-x-1/2 mono-caps text-[10px] tracking-[0.3em] text-bone/30">
-        push the calendar — it springs back
-      </p>
     </section>
   );
 }
