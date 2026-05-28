@@ -122,35 +122,40 @@ const MOON_REPEL_STRENGTH = 2400;
 // door, windows, plinth) is its own InstancedMesh with a single material —
 // same architecture as the Saturn body/ring/moons.
 
-const HOUSE_CENTER_X = 3.05;       // world units, right side
-const HOUSE_CENTER_Y = -1.75;      // bottom area
-const HOUSE_BODY_W = 0.22;
-const HOUSE_BODY_H = 0.16;
-const HOUSE_BODY_D = 0.16;
-const HOUSE_ROOF_W = 0.30;
-const HOUSE_ROOF_H = 0.11;
-const HOUSE_ROOF_D = 0.18;
-const HOUSE_CHIMNEY_W = 0.03;
-const HOUSE_CHIMNEY_H = 0.07;
-const HOUSE_CHIMNEY_D = 0.03;
-const HOUSE_DOOR_W = 0.035;
-const HOUSE_DOOR_H = 0.075;
-const HOUSE_DOOR_D = 0.012;
-const HOUSE_WINDOW_W = 0.028;
-const HOUSE_WINDOW_H = 0.028;
-const HOUSE_WINDOW_D = 0.010;
-const HOUSE_PLINTH_RX = 0.20;
-const HOUSE_PLINTH_RZ = 0.07;
+const HOUSE_CENTER_X = 2.5;        // world units, right side
+const HOUSE_CENTER_Y = -1.4;       // bottom area
+// Larger overall footprint so the angular geometry can read — the previous
+// 0.22 wide body rendered as ~42px on screen, too small for the cube
+// silhouette to survive particle overlap.
+const HOUSE_BODY_W = 0.55;
+const HOUSE_BODY_H = 0.42;
+const HOUSE_BODY_D = 0.32;
+const HOUSE_ROOF_W = 0.70;         // slight overhang past the body
+const HOUSE_ROOF_H = 0.22;
+const HOUSE_ROOF_D = 0.34;
+const HOUSE_CHIMNEY_W = 0.07;
+const HOUSE_CHIMNEY_H = 0.13;
+const HOUSE_CHIMNEY_D = 0.07;
+const HOUSE_DOOR_W = 0.10;
+const HOUSE_DOOR_H = 0.20;
+const HOUSE_DOOR_D = 0.022;
+const HOUSE_WINDOW_W = 0.09;
+const HOUSE_WINDOW_H = 0.09;
+const HOUSE_WINDOW_D = 0.022;
+const HOUSE_PLINTH_RX = 0.40;
+const HOUSE_PLINTH_RZ = 0.16;
 
-const N_HOUSE_BODY = 110;
-const N_HOUSE_ROOF = 75;
-const N_HOUSE_CHIMNEY = 18;
-const N_HOUSE_DOOR = 14;
-const N_HOUSE_WINDOW = 10; // per window
-const N_HOUSE_PLINTH = 48;
+// Body / roof use SHELL sampling (surface only) so the cube and prism
+// silhouettes survive. Solid-fill sampling at this density just blobs into
+// a sphere shape — same problem the moons solve by being naturally round.
+const N_HOUSE_BODY = 220;
+const N_HOUSE_ROOF = 140;
+const N_HOUSE_CHIMNEY = 28;
+const N_HOUSE_DOOR = 24;
+const N_HOUSE_WINDOW = 16; // per window
+const N_HOUSE_PLINTH = 70;
 
-// Same particle radius as the moons for visual consistency.
-const HOUSE_PARTICLE_RADIUS = 0.022;
+const HOUSE_PARTICLE_RADIUS = 0.024;
 
 const HOUSE_BODY_COLOR = "#F5F2EC";     // bone walls (matches text)
 const HOUSE_ROOF_COLOR = "#C97D3E";     // amber roof (matches saturn)
@@ -257,25 +262,116 @@ function sampleBox(N: number, w: number, h: number, d: number): Float32Array {
   return out;
 }
 
-// Triangular prism (roof shape) — wide base, narrow apex at top, extruded
-// along Z. Sampled uniformly in volume so density is even.
-function sampleRoof(
+// Box SHELL — particles only on the 6 surface faces, weighted by area.
+// Used for house walls so the cube silhouette reads through the particle
+// chunkiness instead of blobbing into a sphere.
+function sampleBoxShell(
+  N: number,
+  w: number,
+  h: number,
+  d: number,
+): Float32Array {
+  const out = new Float32Array(N * 3);
+  const areas = [w * h, w * h, d * h, d * h, w * d, w * d]; // F, B, L, R, T, Bot
+  const total = areas[0] + areas[1] + areas[2] + areas[3] + areas[4] + areas[5];
+  for (let i = 0; i < N; i++) {
+    let r = Math.random() * total;
+    let face = 0;
+    for (let f = 0; f < 6; f++) {
+      r -= areas[f];
+      if (r <= 0) {
+        face = f;
+        break;
+      }
+    }
+    const u = Math.random() - 0.5;
+    const v = Math.random() - 0.5;
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    if (face === 0) {
+      x = u * w;
+      y = v * h;
+      z = d / 2;
+    } else if (face === 1) {
+      x = u * w;
+      y = v * h;
+      z = -d / 2;
+    } else if (face === 2) {
+      x = -w / 2;
+      y = u * h;
+      z = v * d;
+    } else if (face === 3) {
+      x = w / 2;
+      y = u * h;
+      z = v * d;
+    } else if (face === 4) {
+      x = u * w;
+      y = h / 2;
+      z = v * d;
+    } else {
+      x = u * w;
+      y = -h / 2;
+      z = v * d;
+    }
+    out[i * 3 + 0] = x;
+    out[i * 3 + 1] = y;
+    out[i * 3 + 2] = z;
+  }
+  return out;
+}
+
+// Triangular prism SHELL — particles on the two slanted top faces + the
+// two triangular gables. The bottom face is omitted because it sits on
+// the body. Used for the roof.
+function sampleRoofShell(
   N: number,
   baseW: number,
   height: number,
   depth: number,
 ): Float32Array {
+  const slantLen = Math.sqrt((baseW / 2) * (baseW / 2) + height * height);
+  const slantArea = slantLen * depth;
+  const gableArea = 0.5 * baseW * height;
+  const areas = [slantArea, slantArea, gableArea, gableArea]; // L slant, R slant, F gable, B gable
+  const total = areas[0] + areas[1] + areas[2] + areas[3];
+
   const out = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
-    // Sample a row Y (uniform in volume → height weighted)
-    // For a triangle whose width = baseW * (1 - y/height), the
-    // y-PDF should be proportional to that width. Inverse-CDF
-    // sampling gives y = height * (1 - sqrt(1 - rand)).
-    const y = height * (1 - Math.sqrt(1 - Math.random()));
-    const xWidth = baseW * (1 - y / height);
-    out[i * 3 + 0] = (Math.random() - 0.5) * xWidth;
-    out[i * 3 + 1] = y - height / 2;
-    out[i * 3 + 2] = (Math.random() - 0.5) * depth;
+    let r = Math.random() * total;
+    let face = 0;
+    for (let f = 0; f < 4; f++) {
+      r -= areas[f];
+      if (r <= 0) {
+        face = f;
+        break;
+      }
+    }
+
+    if (face === 0 || face === 1) {
+      // Slanted face: parameterize along slant (t: 0 at base, 1 at ridge)
+      // and along Z.
+      const t = Math.random();
+      const z = (Math.random() - 0.5) * depth;
+      const yLocal = t * height - height / 2;
+      const xSign = face === 0 ? -1 : 1;
+      const xWidth = ((1 - t) * baseW) / 2;
+      out[i * 3 + 0] = xSign * xWidth;
+      out[i * 3 + 1] = yLocal;
+      out[i * 3 + 2] = z;
+    } else {
+      // Triangular gable: uniform inside the triangle via the half-square
+      // fold trick (if u+v > 1, flip both).
+      let u = Math.random();
+      let v = Math.random();
+      if (u + v > 1) {
+        u = 1 - u;
+        v = 1 - v;
+      }
+      out[i * 3 + 0] = (u - v) * (baseW / 2);
+      out[i * 3 + 1] = (u + v) * height - height / 2;
+      out[i * 3 + 2] = face === 2 ? depth / 2 : -depth / 2;
+    }
   }
   return out;
 }
@@ -458,12 +554,25 @@ function TextField({ anchors }: { anchors: Float32Array }) {
 //   chimney  y = +0.165 (small box poking out of the roof, offset right)
 
 function HouseParticles() {
-  // Build all part anchor sets once.
+  // Build all part anchor sets once. Body + roof use SHELL sampling (just
+  // the outer surfaces) so the cube and prism silhouettes survive at this
+  // particle density. Small parts (door, windows, chimney) use solid
+  // sampling — they're small enough to read as solid panels anyway.
   const parts = useMemo(() => {
     return {
-      body: sampleBox(N_HOUSE_BODY, HOUSE_BODY_W, HOUSE_BODY_H, HOUSE_BODY_D),
-      roof: sampleRoof(N_HOUSE_ROOF, HOUSE_ROOF_W, HOUSE_ROOF_H, HOUSE_ROOF_D),
-      chimney: sampleBox(
+      body: sampleBoxShell(
+        N_HOUSE_BODY,
+        HOUSE_BODY_W,
+        HOUSE_BODY_H,
+        HOUSE_BODY_D,
+      ),
+      roof: sampleRoofShell(
+        N_HOUSE_ROOF,
+        HOUSE_ROOF_W,
+        HOUSE_ROOF_H,
+        HOUSE_ROOF_D,
+      ),
+      chimney: sampleBoxShell(
         N_HOUSE_CHIMNEY,
         HOUSE_CHIMNEY_W,
         HOUSE_CHIMNEY_H,
