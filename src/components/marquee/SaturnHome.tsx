@@ -655,6 +655,104 @@ function SaturnField() {
   );
 }
 
+// ─────────── magnet subheader (Exp 15 mechanic) ───────────
+
+const MAGNET_WORDS = ["He", "Who", "Creates"];
+const MAGNET_RADIUS_PX = 240;
+const MAGNET_STRENGTH = 0.4;
+const MAGNET_SPRING_K = 0.22;
+const MAGNET_DAMPING = 0.72;
+
+function MagnetSubheader() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wordsRef = useRef<(HTMLSpanElement | null)[]>([]);
+  // Per-word current + previous offset (px). 3 words × {x, y}.
+  const offsets = useRef<number[]>([0, 0, 0, 0, 0, 0]);
+  const prev = useRef<number[]>([0, 0, 0, 0, 0, 0]);
+
+  useEffect(() => {
+    let frame = 0;
+    const loop = () => {
+      const container = containerRef.current;
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+
+        for (let i = 0; i < MAGNET_WORDS.length; i++) {
+          const el = wordsRef.current[i];
+          if (!el) continue;
+
+          // Use the current rendered position MINUS the current transform
+          // offset to get the anchor (resting layout position).
+          const wordRect = el.getBoundingClientRect();
+          const renderedCx = wordRect.left + wordRect.width / 2;
+          const renderedCy = wordRect.top + wordRect.height / 2;
+          const ox = offsets.current[i * 2];
+          const oy = offsets.current[i * 2 + 1];
+          const anchorCx = renderedCx - ox;
+          const anchorCy = renderedCy - oy;
+
+          const dx = sharedCursor.pageX - anchorCx;
+          const dy = sharedCursor.pageY - anchorCy;
+          const d = Math.sqrt(dx * dx + dy * dy);
+
+          let tx = 0;
+          let ty = 0;
+          if (sharedCursor.pageX >= 0 && d < MAGNET_RADIUS_PX) {
+            const falloff = 1 - d / MAGNET_RADIUS_PX;
+            const mag = MAGNET_STRENGTH * falloff;
+            tx = dx * mag;
+            ty = dy * mag;
+          }
+
+          const px = prev.current[i * 2];
+          const py = prev.current[i * 2 + 1];
+          const fx = (tx - ox) * MAGNET_SPRING_K;
+          const fy = (ty - oy) * MAGNET_SPRING_K;
+          const vx = (ox - px) * MAGNET_DAMPING;
+          const vy = (oy - py) * MAGNET_DAMPING;
+
+          prev.current[i * 2] = ox;
+          prev.current[i * 2 + 1] = oy;
+          offsets.current[i * 2] = ox + vx + fx;
+          offsets.current[i * 2 + 1] = oy + vy + fy;
+
+          el.style.transform = `translate(${offsets.current[i * 2].toFixed(
+            2,
+          )}px, ${offsets.current[i * 2 + 1].toFixed(2)}px)`;
+        }
+
+        // silence unused-var lint
+        void containerRect;
+      }
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="pointer-events-none absolute inset-x-0 z-10 flex justify-center"
+      style={{ top: "calc(50% + 95px)" }}
+    >
+      <p className="flex items-baseline gap-x-[0.35em] font-serif text-2xl italic text-bone/55 md:text-3xl">
+        {MAGNET_WORDS.map((word, i) => (
+          <span
+            key={i}
+            ref={(el) => {
+              wordsRef.current[i] = el;
+            }}
+            className="inline-block will-change-transform"
+          >
+            {word}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
+}
+
 // ─────────── public component ───────────
 
 export function SaturnHome() {
@@ -724,15 +822,12 @@ export function SaturnHome() {
         </Canvas>
       )}
 
-      {/* "He who Creates" subheader, positioned below the particle text. */}
-      <div
-        className="pointer-events-none absolute inset-x-0 z-10 flex justify-center"
-        style={{ top: "calc(50% + 95px)" }}
-      >
-        <p className="font-serif text-2xl italic text-bone/45 md:text-3xl">
-          He who Creates
-        </p>
-      </div>
+      {/* "He Who Creates" cursor-magnet subheader, positioned below the
+          particle text. Each word leans toward the cursor with spring
+          physics (Exp 15 mechanic applied to a single 3-word phrase). */}
+      <MagnetSubheader />
+
+
 
       {/* Saturn canvas: perspective world space, transparent so text shows
           underneath. */}
