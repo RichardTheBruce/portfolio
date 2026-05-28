@@ -114,6 +114,21 @@ const SATURN_BODY_REPEL_STRENGTH = 6500;
 const MOON_REPEL_RADIUS_PX = 58;
 const MOON_REPEL_STRENGTH = 2400;
 
+// Comet → house impact. CometStreak writes here when it lands; HouseField
+// reads it and applies a radial impulse on the house particles so they
+// scatter and then spring back to their anchors (the "rebuild" mechanic).
+// All values in text-canvas pixel coordinates (origin centered, y-up).
+const sharedComet = {
+  impulseActive: false,
+  impulseOriginX: 0,
+  impulseOriginY: 0,
+  impulseAge: 0,
+  impulseDuration: 1.2,
+};
+
+const HOUSE_IMPULSE_RADIUS_PX = 130;
+const HOUSE_IMPULSE_STRENGTH = 26000;
+
 // ────────── particle house ──────────
 //
 // A tiny house in the bottom-right of the hero, built out of the same
@@ -122,41 +137,40 @@ const MOON_REPEL_STRENGTH = 2400;
 // door, windows, plinth) is its own InstancedMesh with a single material —
 // same architecture as the Saturn body/ring/moons.
 
-const HOUSE_CENTER_X = 2.9;        // world units, tucked in the right corner
-const HOUSE_CENTER_Y = -1.55;      // lower band
-// Smaller footprint with much smaller particles so the silhouette reads as
-// a crisp little house rather than a chunky blob. Each particle is ~25%
-// the diameter of a moon particle, which gives us many more dots tracing
-// the cube and prism edges — like a fine pen-drawn house with cosmic dust.
-const HOUSE_BODY_W = 0.32;
-const HOUSE_BODY_H = 0.24;
-const HOUSE_BODY_D = 0.20;
-const HOUSE_ROOF_W = 0.40;         // slight overhang past the body
-const HOUSE_ROOF_H = 0.14;
-const HOUSE_ROOF_D = 0.22;
-const HOUSE_CHIMNEY_W = 0.04;
-const HOUSE_CHIMNEY_H = 0.08;
-const HOUSE_CHIMNEY_D = 0.04;
-const HOUSE_DOOR_W = 0.055;
-const HOUSE_DOOR_H = 0.105;
-const HOUSE_DOOR_D = 0.012;
-const HOUSE_WINDOW_W = 0.05;
-const HOUSE_WINDOW_H = 0.05;
-const HOUSE_WINDOW_D = 0.012;
-const HOUSE_PLINTH_RX = 0.24;
-const HOUSE_PLINTH_RZ = 0.10;
+// House now lives in the TEXT canvas (orthographic pixel space) — same
+// coordinate system as the comet, so we can collide them directly. All
+// values in pixels (origin centered, y-up).
+const HOUSE_CENTER_X = 500;
+const HOUSE_CENTER_Y = -300;
+const HOUSE_BODY_W = 90;
+const HOUSE_BODY_H = 68;
+const HOUSE_ROOF_W = 110;
+const HOUSE_ROOF_H = 38;
+const HOUSE_CHIMNEY_W = 11;
+const HOUSE_CHIMNEY_H = 24;
+const HOUSE_DOOR_W = 16;
+const HOUSE_DOOR_H = 30;
+const HOUSE_WINDOW_W = 14;
+const HOUSE_WINDOW_H = 14;
+const HOUSE_PLINTH_RX = 70;
+const HOUSE_PLINTH_RZ = 14;
 
-// Body / roof are EDGE-sampled (wireframe along the 12 cube edges / the
-// roof's ridges) so the angular geometry reads as a drawn outline. Small
-// parts stay solid-filled.
 const N_HOUSE_BODY = 220;
-const N_HOUSE_ROOF = 160;
-const N_HOUSE_CHIMNEY = 28;
-const N_HOUSE_DOOR = 28;
-const N_HOUSE_WINDOW = 20; // per window
-const N_HOUSE_PLINTH = 70;
+const N_HOUSE_ROOF = 170;
+const N_HOUSE_CHIMNEY = 42;
+const N_HOUSE_DOOR = 44;
+const N_HOUSE_WINDOW = 30; // per window
+const N_HOUSE_PLINTH = 80;
 
-const HOUSE_PARTICLE_RADIUS = 0.012;
+// Jitter perpendicular to each edge so the outline has the same chunky
+// cosmic-dust character as the moons. In pixel space now.
+const HOUSE_JITTER_PX = 3.5;
+const HOUSE_POINT_SIZE_PX = 2.6;
+
+// Verlet physics for the "living" house. Spring-back is gentle so the
+// rebuild after a comet hit takes ~2s and reads as deliberate, not snappy.
+const HOUSE_SPRING_K = 0.045;
+const HOUSE_DAMPING = 0.91;
 
 const HOUSE_BODY_COLOR = "#F5F2EC";     // bone walls (matches text)
 const HOUSE_ROOF_COLOR = "#C97D3E";     // amber roof (matches saturn)
@@ -264,9 +278,14 @@ function sampleBox(N: number, w: number, h: number, d: number): Float32Array {
 }
 
 // 2D RECTANGLE outline (XY plane) — particles along 4 edges. Reads as a
-// clean drawn rectangle from the front. Tiny perpendicular jitter so the
-// line has the same chunky particle character as the moons.
-function sampleRectOutline(N: number, w: number, h: number): Float32Array {
+// clean drawn rectangle from the front. Perpendicular jitter gives the
+// line the same chunky cosmic-dust character as the moons.
+function sampleRectOutline(
+  N: number,
+  w: number,
+  h: number,
+  jitter: number,
+): Float32Array {
   const out = new Float32Array(N * 3);
   // 4 edges weighted by length: top, bottom, left, right
   const lenTop = w;
@@ -277,7 +296,6 @@ function sampleRectOutline(N: number, w: number, h: number): Float32Array {
   for (let i = 0; i < N; i++) {
     const r = Math.random() * total;
     const t = Math.random();
-    const jit = HOUSE_PARTICLE_RADIUS * 0.7;
     let x = 0;
     let y = 0;
     if (r < lenTop) {
@@ -293,9 +311,9 @@ function sampleRectOutline(N: number, w: number, h: number): Float32Array {
       x = w / 2;
       y = -h / 2 + t * h;
     }
-    out[i * 3 + 0] = x + (Math.random() - 0.5) * jit;
-    out[i * 3 + 1] = y + (Math.random() - 0.5) * jit;
-    out[i * 3 + 2] = (Math.random() - 0.5) * jit;
+    out[i * 3 + 0] = x + (Math.random() - 0.5) * jitter;
+    out[i * 3 + 1] = y + (Math.random() - 0.5) * jitter;
+    out[i * 3 + 2] = 0;
   }
   return out;
 }
@@ -306,25 +324,22 @@ function sampleTriangleOutline(
   N: number,
   baseW: number,
   height: number,
+  jitter: number,
 ): Float32Array {
   const out = new Float32Array(N * 3);
-  // 2 slant edges, equal length
   for (let i = 0; i < N; i++) {
     const t = Math.random();
-    const jit = HOUSE_PARTICLE_RADIUS * 0.7;
     const goingRight = Math.random() < 0.5;
     let x: number;
     if (goingRight) {
-      // From left base (-baseW/2, -h/2) to apex (0, +h/2)
       x = -baseW / 2 + (baseW / 2) * t;
     } else {
-      // From right base (+baseW/2, -h/2) to apex (0, +h/2)
       x = baseW / 2 - (baseW / 2) * t;
     }
     const y = -height / 2 + height * t;
-    out[i * 3 + 0] = x + (Math.random() - 0.5) * jit;
-    out[i * 3 + 1] = y + (Math.random() - 0.5) * jit;
-    out[i * 3 + 2] = (Math.random() - 0.5) * jit;
+    out[i * 3 + 0] = x + (Math.random() - 0.5) * jitter;
+    out[i * 3 + 1] = y + (Math.random() - 0.5) * jitter;
+    out[i * 3 + 2] = 0;
   }
   return out;
 }
@@ -620,163 +635,267 @@ function TextField({ anchors }: { anchors: Float32Array }) {
 //   roof     y = +0.135 (triangular prism on top)
 //   chimney  y = +0.165 (small box poking out of the roof, offset right)
 
-function HouseParticles() {
-  // Build all part anchor sets once. Body + roof use SHELL sampling (just
-  // the outer surfaces) so the cube and prism silhouettes survive at this
-  // particle density. Small parts (door, windows, chimney) use solid
-  // sampling — they're small enough to read as solid panels anyway.
-  const parts = useMemo(() => {
-    return {
-      body: sampleRectOutline(N_HOUSE_BODY, HOUSE_BODY_W, HOUSE_BODY_H),
-      roof: sampleTriangleOutline(
-        N_HOUSE_ROOF,
-        HOUSE_ROOF_W,
-        HOUSE_ROOF_H,
+// HouseField — living, Verlet-physics house. Each particle has an anchor
+// (its outline position), a current position, and a previous position. Every
+// frame: spring toward anchor + apply impulse from sharedComet if active +
+// Verlet integration. When the comet lands on the house, the impulse scatters
+// the particles outward; the spring force then pulls them back to their
+// anchors over ~2s — the house *rebuilds itself* after every hit.
+
+type HousePart = {
+  count: number;
+  color: string;
+  opacity: number;
+  // Anchor in pixel space, fully shifted to its final world position.
+  anchors: Float32Array;
+};
+
+function buildHousePart(
+  anchors: Float32Array,
+  offsetX: number,
+  offsetY: number,
+  color: string,
+  opacity: number,
+): HousePart {
+  const count = anchors.length / 3;
+  const shifted = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    shifted[i * 3 + 0] = anchors[i * 3 + 0] + offsetX;
+    shifted[i * 3 + 1] = anchors[i * 3 + 1] + offsetY;
+    shifted[i * 3 + 2] = 0;
+  }
+  return { count, color, opacity, anchors: shifted };
+}
+
+// Shared shader for all house parts (circle-masked point sprite, same as
+// the text dots). The color uniform is per-Points so each part can have
+// its own tint.
+const houseDotVertexShader = /* glsl */ `
+  uniform float uPointSize;
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = uPointSize;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const houseDotFragmentShader = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  void main() {
+    vec2 coord = gl_PointCoord - vec2(0.5);
+    float d = length(coord);
+    if (d > 0.5) discard;
+    float alpha = smoothstep(0.5, 0.42, d);
+    gl_FragColor = vec4(uColor, alpha * uOpacity);
+  }
+`;
+
+function makeHouseDotMaterial(
+  color: string,
+  opacity: number,
+): THREE.ShaderMaterial {
+  const dpr =
+    typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return new THREE.ShaderMaterial({
+    vertexShader: houseDotVertexShader,
+    fragmentShader: houseDotFragmentShader,
+    uniforms: {
+      uPointSize: { value: HOUSE_POINT_SIZE_PX * dpr },
+      uColor: { value: new THREE.Color(color) },
+      uOpacity: { value: opacity },
+    },
+    transparent: true,
+    depthWrite: false,
+  });
+}
+
+function HouseField() {
+  // Build the full part list once, with anchors already shifted to their
+  // final positions in pixel space (HOUSE_CENTER + per-part offset + local).
+  const partsData = useMemo<HousePart[]>(() => {
+    const j = HOUSE_JITTER_PX;
+    const cx = HOUSE_CENTER_X;
+    const cy = HOUSE_CENTER_Y;
+
+    return [
+      // Plinth (drawn first so it sits "underneath" visually)
+      buildHousePart(
+        sampleFlatEllipse(N_HOUSE_PLINTH, HOUSE_PLINTH_RX, HOUSE_PLINTH_RZ),
+        cx,
+        cy - HOUSE_BODY_H / 2 - 8,
+        HOUSE_PLINTH_COLOR,
+        0.55,
       ),
-      chimney: sampleRectOutline(
-        N_HOUSE_CHIMNEY,
-        HOUSE_CHIMNEY_W,
-        HOUSE_CHIMNEY_H,
+      // Body walls
+      buildHousePart(
+        sampleRectOutline(N_HOUSE_BODY, HOUSE_BODY_W, HOUSE_BODY_H, j),
+        cx,
+        cy,
+        HOUSE_BODY_COLOR,
+        1.0,
       ),
-      door: sampleRectOutline(N_HOUSE_DOOR, HOUSE_DOOR_W, HOUSE_DOOR_H),
-      windowLeft: sampleRectOutline(
-        N_HOUSE_WINDOW,
-        HOUSE_WINDOW_W,
-        HOUSE_WINDOW_H,
+      // Roof
+      buildHousePart(
+        sampleTriangleOutline(
+          N_HOUSE_ROOF,
+          HOUSE_ROOF_W,
+          HOUSE_ROOF_H,
+          j,
+        ),
+        cx,
+        cy + HOUSE_BODY_H / 2 + HOUSE_ROOF_H / 2,
+        HOUSE_ROOF_COLOR,
+        1.0,
       ),
-      windowRight: sampleRectOutline(
-        N_HOUSE_WINDOW,
-        HOUSE_WINDOW_W,
-        HOUSE_WINDOW_H,
+      // Chimney
+      buildHousePart(
+        sampleRectOutline(
+          N_HOUSE_CHIMNEY,
+          HOUSE_CHIMNEY_W,
+          HOUSE_CHIMNEY_H,
+          j * 0.7,
+        ),
+        cx + HOUSE_BODY_W * 0.24,
+        cy + HOUSE_BODY_H / 2 + HOUSE_ROOF_H * 0.55 + HOUSE_CHIMNEY_H / 2,
+        HOUSE_CHIMNEY_COLOR,
+        1.0,
       ),
-      plinth: sampleFlatEllipse(
-        N_HOUSE_PLINTH,
-        HOUSE_PLINTH_RX,
-        HOUSE_PLINTH_RZ,
+      // Door
+      buildHousePart(
+        sampleRectOutline(N_HOUSE_DOOR, HOUSE_DOOR_W, HOUSE_DOOR_H, j * 0.8),
+        cx,
+        cy - HOUSE_BODY_H / 2 + HOUSE_DOOR_H / 2,
+        HOUSE_DOOR_COLOR,
+        1.0,
       ),
-    };
+      // Left window
+      buildHousePart(
+        sampleRectOutline(
+          N_HOUSE_WINDOW,
+          HOUSE_WINDOW_W,
+          HOUSE_WINDOW_H,
+          j * 0.7,
+        ),
+        cx - HOUSE_BODY_W * 0.3,
+        cy + HOUSE_BODY_H * 0.1,
+        HOUSE_WINDOW_COLOR,
+        1.0,
+      ),
+      // Right window
+      buildHousePart(
+        sampleRectOutline(
+          N_HOUSE_WINDOW,
+          HOUSE_WINDOW_W,
+          HOUSE_WINDOW_H,
+          j * 0.7,
+        ),
+        cx + HOUSE_BODY_W * 0.3,
+        cy + HOUSE_BODY_H * 0.1,
+        HOUSE_WINDOW_COLOR,
+        1.0,
+      ),
+    ];
   }, []);
 
-  // Refs for each mesh
-  const bodyRef = useRef<THREE.InstancedMesh>(null);
-  const roofRef = useRef<THREE.InstancedMesh>(null);
-  const chimneyRef = useRef<THREE.InstancedMesh>(null);
-  const doorRef = useRef<THREE.InstancedMesh>(null);
-  const windowLeftRef = useRef<THREE.InstancedMesh>(null);
-  const windowRightRef = useRef<THREE.InstancedMesh>(null);
-  const plinthRef = useRef<THREE.InstancedMesh>(null);
+  // Mutable position state per part — starts at anchors so the house is
+  // built on mount. Verlet's `prev` also seeds at anchor so initial velocity
+  // is zero.
+  const positionsByPart = useMemo(
+    () => partsData.map((p) => new Float32Array(p.anchors)),
+    [partsData],
+  );
+  const prevByPart = useMemo(
+    () => partsData.map((p) => new Float32Array(p.anchors)),
+    [partsData],
+  );
 
-  // Write the per-instance matrices once on mount.
-  useEffect(() => {
-    const tmp = new THREE.Object3D();
+  const pointsRefs = useRef<(THREE.Points | null)[]>([]);
 
-    const write = (
-      mesh: THREE.InstancedMesh | null,
-      anchors: Float32Array,
-      offsetX: number,
-      offsetY: number,
-      offsetZ: number,
-    ) => {
-      if (!mesh) return;
-      const count = anchors.length / 3;
-      for (let i = 0; i < count; i++) {
-        tmp.position.set(
-          HOUSE_CENTER_X + offsetX + anchors[i * 3 + 0],
-          HOUSE_CENTER_Y + offsetY + anchors[i * 3 + 1],
-          offsetZ + anchors[i * 3 + 2],
-        );
-        tmp.updateMatrix();
-        mesh.setMatrixAt(i, tmp.matrix);
+  // Pre-create one material per part so each gets its own uColor uniform.
+  const materials = useMemo(
+    () => partsData.map((p) => makeHouseDotMaterial(p.color, p.opacity)),
+    [partsData],
+  );
+
+  useFrame(() => {
+    const impulseActive = sharedComet.impulseActive;
+    const imOx = sharedComet.impulseOriginX;
+    const imOy = sharedComet.impulseOriginY;
+    // Ease the impulse: peak at t=0 (just after impact), fades to zero.
+    const tNorm = impulseActive
+      ? sharedComet.impulseAge / sharedComet.impulseDuration
+      : 1;
+    const impulsePower = impulseActive
+      ? HOUSE_IMPULSE_STRENGTH * Math.pow(1 - tNorm, 2.2)
+      : 0;
+    const imR2 = HOUSE_IMPULSE_RADIUS_PX * HOUSE_IMPULSE_RADIUS_PX;
+
+    for (let p = 0; p < partsData.length; p++) {
+      const anchors = partsData[p].anchors;
+      const positions = positionsByPart[p];
+      const prev = prevByPart[p];
+      const N = anchors.length / 3;
+      const ptsObj = pointsRefs.current[p];
+      if (!ptsObj) continue;
+
+      for (let i = 0; i < N; i++) {
+        const ix = i * 3;
+        const x = positions[ix];
+        const y = positions[ix + 1];
+        const ax = anchors[ix];
+        const ay = anchors[ix + 1];
+        const px = prev[ix];
+        const py = prev[ix + 1];
+
+        let fx = (ax - x) * HOUSE_SPRING_K;
+        let fy = (ay - y) * HOUSE_SPRING_K;
+
+        if (impulsePower > 0) {
+          const dx = x - imOx;
+          const dy = y - imOy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < imR2 && d2 > 1) {
+            const dist = Math.sqrt(d2);
+            const falloff = 1 - dist / HOUSE_IMPULSE_RADIUS_PX;
+            const mag = (impulsePower * falloff * falloff) / (d2 + 80);
+            fx += (dx / dist) * mag;
+            fy += (dy / dist) * mag;
+          }
+        }
+
+        const vx = (x - px) * HOUSE_DAMPING;
+        const vy = (y - py) * HOUSE_DAMPING;
+        prev[ix] = x;
+        prev[ix + 1] = y;
+        positions[ix] = x + vx + fx;
+        positions[ix + 1] = y + vy + fy;
       }
-      mesh.instanceMatrix.needsUpdate = true;
-    };
 
-    // 2D house — everything in the XY plane at z ≈ 0. Small z stagger
-    // (a few thousandths of a world unit) on the small parts so the
-    // additive bloom layers cleanly without z-fighting.
-    write(bodyRef.current, parts.body, 0, 0, 0);
-    write(roofRef.current, parts.roof, 0, HOUSE_BODY_H / 2 + HOUSE_ROOF_H / 2, 0);
-    write(
-      chimneyRef.current,
-      parts.chimney,
-      HOUSE_BODY_W * 0.22,
-      HOUSE_BODY_H / 2 + HOUSE_ROOF_H * 0.55 + HOUSE_CHIMNEY_H / 2,
-      0.003,
-    );
-    write(
-      doorRef.current,
-      parts.door,
-      0,
-      -HOUSE_BODY_H / 2 + HOUSE_DOOR_H / 2,
-      0.005,
-    );
-    write(
-      windowLeftRef.current,
-      parts.windowLeft,
-      -HOUSE_BODY_W * 0.28,
-      HOUSE_BODY_H * 0.12,
-      0.005,
-    );
-    write(
-      windowRightRef.current,
-      parts.windowRight,
-      HOUSE_BODY_W * 0.28,
-      HOUSE_BODY_H * 0.12,
-      0.005,
-    );
-    write(
-      plinthRef.current,
-      parts.plinth,
-      0,
-      -HOUSE_BODY_H / 2 - 0.02,
-      0,
-    );
-  }, [parts]);
+      (
+        ptsObj.geometry.attributes.position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+  });
 
   return (
     <>
-      <instancedMesh ref={plinthRef} args={[undefined, undefined, N_HOUSE_PLINTH]}>
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.7, 10, 10]} />
-        <meshBasicMaterial
-          color={HOUSE_PLINTH_COLOR}
-          transparent
-          opacity={0.45}
-          toneMapped={false}
-        />
-      </instancedMesh>
-      <instancedMesh ref={bodyRef} args={[undefined, undefined, N_HOUSE_BODY]}>
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_BODY_COLOR} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh ref={roofRef} args={[undefined, undefined, N_HOUSE_ROOF]}>
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_ROOF_COLOR} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh
-        ref={chimneyRef}
-        args={[undefined, undefined, N_HOUSE_CHIMNEY]}
-      >
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_CHIMNEY_COLOR} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh ref={doorRef} args={[undefined, undefined, N_HOUSE_DOOR]}>
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_DOOR_COLOR} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh
-        ref={windowLeftRef}
-        args={[undefined, undefined, N_HOUSE_WINDOW]}
-      >
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_WINDOW_COLOR} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh
-        ref={windowRightRef}
-        args={[undefined, undefined, N_HOUSE_WINDOW]}
-      >
-        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
-        <meshBasicMaterial color={HOUSE_WINDOW_COLOR} toneMapped={false} />
-      </instancedMesh>
+      {partsData.map((part, i) => (
+        <points
+          key={i}
+          ref={(el) => {
+            pointsRefs.current[i] = el as unknown as THREE.Points | null;
+          }}
+          material={materials[i]}
+        >
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[positionsByPart[i], 3]}
+            />
+          </bufferGeometry>
+        </points>
+      ))}
     </>
   );
 }
@@ -1233,9 +1352,14 @@ function CometStreak() {
       // distance, peaks well above the text, then lands at the right end
       // of "RichardTheBruce" with a satisfying burst.
       f.startX = -halfW - COMET_START_X_MARGIN;
-      f.startY = COMET_LANDING_Y_PX + (Math.random() - 0.5) * 20; // tiny jitter
-      f.endX = halfW * COMET_LANDING_X_FRAC + (Math.random() - 0.5) * 30;
-      f.endY = COMET_LANDING_Y_PX + (Math.random() - 0.5) * 20;
+      // Launch from a height somewhere between the text band and the house
+      // so the long descending arc finishes at the house rooftop.
+      f.startY = -80 + (Math.random() - 0.5) * 40;
+      // Land directly on the house (center of body, with tiny jitter so each
+      // hit isn't pixel-identical). HouseField reads the impulse origin and
+      // scatters its particles outward from this point.
+      f.endX = HOUSE_CENTER_X + (Math.random() - 0.5) * 22;
+      f.endY = HOUSE_CENTER_Y + (Math.random() - 0.5) * 14;
 
       // Prime tail with the start position so the trail doesn't render
       // a line from the previous flight's last frame.
@@ -1279,6 +1403,13 @@ function CometStreak() {
         }
         headPosition[0] = COMET_OFF_SCREEN;
         headPosition[1] = COMET_OFF_SCREEN;
+
+        // Notify the house — comet impact at (landX, landY).
+        sharedComet.impulseActive = true;
+        sharedComet.impulseOriginX = landX;
+        sharedComet.impulseOriginY = landY;
+        sharedComet.impulseAge = 0;
+        sharedComet.impulseDuration = EXPLOSION_DURATION_S;
 
         f.phase = "explode";
         f.phaseStart = now;
@@ -1334,6 +1465,9 @@ function CometStreak() {
     if (f.phase === "explode") {
       const age = now - f.phaseStart;
       const t = age / EXPLOSION_DURATION_S;
+      // Mirror progress to shared state so HouseField's impulse decays in
+      // lockstep with the visible burst.
+      sharedComet.impulseAge = age;
 
       if (t >= 1) {
         // Burst finished. Park, schedule next comet.
@@ -1341,6 +1475,7 @@ function CometStreak() {
           explPositions[i * 3 + 0] = COMET_OFF_SCREEN;
           explPositions[i * 3 + 1] = COMET_OFF_SCREEN;
         }
+        sharedComet.impulseActive = false;
         f.phase = "idle";
         f.nextSpawnAt =
           debugMode === "loop"
@@ -1715,6 +1850,7 @@ export function SaturnHome() {
         >
           <ScreenPixelCamera />
           <TextField anchors={anchors} />
+          <HouseField />
           <CometStreak />
           <EffectComposer>
             <Bloom
@@ -1747,7 +1883,6 @@ export function SaturnHome() {
         gl={{ alpha: true, antialias: true }}
       >
         <SaturnField />
-        <HouseParticles />
         <EffectComposer>
           <Bloom
             intensity={0.45}
