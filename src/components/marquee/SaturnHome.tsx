@@ -31,8 +31,6 @@ const FONT_SIZE_PX = 140;
 const PARTICLE_TARGET = 8000;
 const REST_SPRING_K = 0.04;
 const TEXT_DAMPING = 0.92;
-const REPEL_RADIUS_PX = 130;
-const REPEL_STRENGTH = 5400;
 const REPEL_SOFT_FLOOR = 100;
 const POINT_SIZE_PX = 2.2;
 const POINT_COLOR = 0xf5f2ec; // bone
@@ -87,19 +85,34 @@ const RANGE_BODY_START = 0;
 const RANGE_RING_START = RANGE_BODY_START + N_BODY;
 const RANGE_MOON_START = RANGE_RING_START + N_RING;
 
-// ────────── shared cursor (window-level) ──────────
+// ────────── shared state (window-level) ──────────
 
-// Both canvases read this. Updated by a single window pointermove listener
-// mounted at the SaturnHome level.
+// A repelling body that pushes text particles aside. Position is in TEXT-CANVAS
+// pixel coordinates (origin centered, y-up — matching the text canvas).
+interface RepelBody {
+  x: number;
+  y: number;
+  radius: number;   // px
+  strength: number; // peak force at center
+}
+
+// Cursor + saturn-body positions feed across both canvases. The SaturnField
+// computes saturn + moon centers in world space every frame, projects them
+// into text-canvas pixel coordinates, and writes them here. The TextField
+// reads `bodies` and pushes letterform particles aside as Saturn and its
+// moons drift across the page.
 const sharedCursor = {
-  // Page-space client coords (px). -1 means "not over the section".
   pageX: -10000,
   pageY: -10000,
   inside: false,
-  // Section-relative coords (px from section top-left)
-  sectionX: -10000,
-  sectionY: -10000,
+  bodies: [] as RepelBody[],
 };
+
+// Repel tuning for each body type
+const SATURN_BODY_REPEL_RADIUS_PX = 110;
+const SATURN_BODY_REPEL_STRENGTH = 6500;
+const MOON_REPEL_RADIUS_PX = 58;
+const MOON_REPEL_STRENGTH = 2400;
 
 // ─────────── samplers ───────────
 
@@ -262,33 +275,19 @@ function TextField({ anchors }: { anchors: Float32Array }) {
   const prevPositions = useMemo(() => new Float32Array(anchors), [anchors]);
 
   const pointsRef = useRef<THREE.Points>(null);
-  const { gl } = useThree();
-  const sectionMouse = useRef({ x: 0, y: 0, inside: false });
 
-  // Translate window cursor to canvas-pixel coords (origin centered, y-up).
+  // Repel comes from the saturn body + moons (sharedCursor.bodies),
+  // populated each frame by SaturnField. No direct cursor tracking here.
   useFrame(() => {
-    const canvas = gl.domElement;
-    const r = canvas.getBoundingClientRect();
-    if (
-      sharedCursor.pageX >= r.left &&
-      sharedCursor.pageX <= r.right &&
-      sharedCursor.pageY >= r.top &&
-      sharedCursor.pageY <= r.bottom
-    ) {
-      sectionMouse.current.x = sharedCursor.pageX - r.left - r.width / 2;
-      sectionMouse.current.y = -(sharedCursor.pageY - r.top - r.height / 2);
-      sectionMouse.current.inside = true;
-    } else {
-      sectionMouse.current.inside = false;
-    }
-
     const pts = pointsRef.current;
     if (!pts) return;
 
-    const mx = sectionMouse.current.x;
-    const my = sectionMouse.current.y;
-    const inside = sectionMouse.current.inside;
-    const repelSq = REPEL_RADIUS_PX * REPEL_RADIUS_PX;
+    // Repel from Saturn + each moon (positions in text-pixel coords),
+    // not from the bare cursor. Saturn already follows the cursor with
+    // lag, so this still feels cursor-driven — plus the moons drag their
+    // own disturbance trails through the word as they orbit.
+    const bodies = sharedCursor.bodies;
+    const nb = bodies.length;
 
     for (let i = 0; i < N; i++) {
       const ix = i * 3;
@@ -302,15 +301,17 @@ function TextField({ anchors }: { anchors: Float32Array }) {
       let fx = (ax - x) * REST_SPRING_K;
       let fy = (ay - y) * REST_SPRING_K;
 
-      if (inside) {
-        const dx = x - mx;
-        const dy = y - my;
+      for (let b = 0; b < nb; b++) {
+        const body = bodies[b];
+        const dx = x - body.x;
+        const dy = y - body.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < repelSq && d2 > 1) {
+        const rSq = body.radius * body.radius;
+        if (d2 < rSq && d2 > 1) {
           const dist = Math.sqrt(d2);
-          const falloff = 1 - dist / REPEL_RADIUS_PX;
+          const falloff = 1 - dist / body.radius;
           const mag =
-            (REPEL_STRENGTH * falloff * falloff) / (d2 + REPEL_SOFT_FLOOR);
+            (body.strength * falloff * falloff) / (d2 + REPEL_SOFT_FLOOR);
           fx += (dx / dist) * mag;
           fy += (dy / dist) * mag;
         }
@@ -504,6 +505,28 @@ function SaturnField() {
       moonCenters[m * 3 + 1] = sy + y2;
       moonCenters[m * 3 + 2] = sz + z2;
     }
+
+    // Project saturn + moon centers into TEXT-canvas pixel coordinates so
+    // the text particles can repel against them. Both canvases share the
+    // viewport, so the conversion is a simple per-axis scale.
+    const pxPerWorldX = rect.width / 2 / halfW;
+    const pxPerWorldY = rect.height / 2 / halfH;
+    const bodies: RepelBody[] = [];
+    bodies.push({
+      x: sx * pxPerWorldX,
+      y: sy * pxPerWorldY,
+      radius: SATURN_BODY_REPEL_RADIUS_PX,
+      strength: SATURN_BODY_REPEL_STRENGTH,
+    });
+    for (let m = 0; m < N_MOONS; m++) {
+      bodies.push({
+        x: moonCenters[m * 3 + 0] * pxPerWorldX,
+        y: moonCenters[m * 3 + 1] * pxPerWorldY,
+        radius: MOON_REPEL_RADIUS_PX,
+        strength: MOON_REPEL_STRENGTH,
+      });
+    }
+    sharedCursor.bodies = bodies;
 
     if (impulseRemaining.current > 0) {
       impulseRemaining.current -= dtClamped;
