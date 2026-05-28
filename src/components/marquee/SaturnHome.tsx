@@ -674,12 +674,23 @@ function SaturnField() {
 const COMET_TAIL_LENGTH = 48;
 const COMET_TAIL_HEAD_SIZE_PX = 14;
 const COMET_TAIL_END_SIZE_PX = 2;
-const COMET_FLIGHT_DURATION_S = 1.6;
+const COMET_FLIGHT_DURATION_S = 2.0;          // a bit slower for the arc
 const COMET_INTERVAL_MIN_S = 7;
 const COMET_INTERVAL_MAX_S = 14;
 const COMET_FIRST_DELAY_S = 1.4;
 const COMET_HEAD_SIZE_PX = 18;
 const COMET_OFF_SCREEN = -99999;
+const COMET_ARC_HEIGHT_PX = 360;               // peak of the rainbow above the linear chord
+
+// Explosion: radial burst at landing point.
+const EXPLOSION_PARTICLE_COUNT = 64;
+const EXPLOSION_DURATION_S = 1.2;
+const EXPLOSION_SPEED_MIN_PX_S = 280;
+const EXPLOSION_SPEED_MAX_PX_S = 720;
+const EXPLOSION_GRAVITY_PX_S2 = 620;           // pulls fragments back down
+const EXPLOSION_UPWARD_BIAS_PX_S = 130;        // pops upward before gravity grabs them
+const EXPLOSION_HEAD_SIZE_PX = 18;
+const EXPLOSION_TAIL_SIZE_PX = 2;
 
 function CometStreak() {
   const { size } = useThree();
@@ -697,17 +708,34 @@ function CometStreak() {
 
   const headPosition = useMemo(() => new Float32Array([0, 0, 0]), []);
 
+  // Explosion buffers — positions and per-particle velocities. Position.z
+  // again carries the index so the shader can vary appearance per-particle.
+  const explPositions = useMemo(() => {
+    const out = new Float32Array(EXPLOSION_PARTICLE_COUNT * 3);
+    for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+      out[i * 3 + 2] = i;
+    }
+    return out;
+  }, []);
+  const explVelocities = useMemo(
+    () => new Float32Array(EXPLOSION_PARTICLE_COUNT * 2),
+    [],
+  );
+
   const tailRef = useRef<THREE.Points>(null);
   const headRef = useRef<THREE.Points>(null);
+  const explRef = useRef<THREE.Points>(null);
 
-  // Flight state. ?comet=freeze pins a comet at mid-flight for screenshot
-  // verification; ?comet=loop fires comets every 2s back-to-back.
+  // Flight + explosion state. ?comet=freeze pins a comet at mid-flight for
+  // screenshot verification; ?comet=loop fires comets immediately back-to-back.
   const debugMode =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("comet")
       : null;
   const flight = useRef({
-    activeStart: -1, // sentinel = no active flight
+    // 'idle' = waiting to spawn, 'flight' = comet arcing, 'explode' = burst playing
+    phase: "idle" as "idle" | "flight" | "explode",
+    phaseStart: 0,
     nextSpawnAt:
       debugMode === "loop" || debugMode === "freeze"
         ? 0.2
@@ -718,8 +746,8 @@ function CometStreak() {
     endY: 0,
   });
 
-  // Park everything off-screen on mount so we don't render a stale
-  // origin-point before the first flight.
+  // Park everything off-screen on mount so we don't render stale origin
+  // points before the first flight.
   useEffect(() => {
     for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
       tailPositions[i * 3 + 0] = COMET_OFF_SCREEN;
@@ -727,70 +755,103 @@ function CometStreak() {
     }
     headPosition[0] = COMET_OFF_SCREEN;
     headPosition[1] = COMET_OFF_SCREEN;
-    if (tailRef.current) {
-      (
-        tailRef.current.geometry.attributes
-          .position as THREE.BufferAttribute
-      ).needsUpdate = true;
+    for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+      explPositions[i * 3 + 0] = COMET_OFF_SCREEN;
+      explPositions[i * 3 + 1] = COMET_OFF_SCREEN;
     }
-    if (headRef.current) {
-      (
-        headRef.current.geometry.attributes
-          .position as THREE.BufferAttribute
-      ).needsUpdate = true;
-    }
-  }, [tailPositions, headPosition]);
+    [tailRef, headRef, explRef].forEach((r) => {
+      if (r.current) {
+        (
+          r.current.geometry.attributes.position as THREE.BufferAttribute
+        ).needsUpdate = true;
+      }
+    });
+  }, [tailPositions, headPosition, explPositions]);
 
-  useFrame((state) => {
+  useFrame((state, rawDt) => {
+    const dt = Math.min(rawDt, 0.05);
     const now = state.clock.elapsedTime;
     const f = flight.current;
 
-    // Need to spawn?
-    if (f.activeStart < 0 && now >= f.nextSpawnAt) {
-      f.activeStart = now;
-      // Path: enters from off-screen left, exits off-screen right.
-      // Y in the band that crosses RichardTheBruce (which sits roughly
-      // y=-110..+40 in pixel coords with TEXT_VERTICAL_OFFSET_PX=-40).
-      // Add a downward slope so it feels like a falling star.
-      const margin = 140;
+    // ───── spawn? ─────
+    if (f.phase === "idle" && now >= f.nextSpawnAt) {
       const halfW = size.width / 2;
-      const yBand = (Math.random() - 0.5) * 160; // -80..+80 — over the text
-      f.startX = -halfW - margin;
-      f.startY = yBand + (Math.random() * 80 + 30); // upper entry
-      f.endX = halfW + margin;
-      f.endY = yBand - (Math.random() * 100 + 40); // lower exit
-      // Reset tail to the start point so the line doesn't "snap" from old data
+      const margin = 80;
+      // Choose entry side: rainbow can curve from either side. Default
+      // left → right; flip with 50% chance for variety.
+      const goingRight = Math.random() > 0.5;
+      // Landing point is comfortably within the viewport so the
+      // explosion is fully visible. Y near the lower edge of the text
+      // band so it looks like "lands at the horizon".
+      const landY = -160 - Math.random() * 80; // -160..-240
+      const launchY = -120 - Math.random() * 60; // -120..-180
+      if (goingRight) {
+        f.startX = -halfW - margin;
+        f.endX = halfW * 0.25 + Math.random() * halfW * 0.5; // right-center
+      } else {
+        f.startX = halfW + margin;
+        f.endX = -halfW * 0.25 - Math.random() * halfW * 0.5; // left-center
+      }
+      f.startY = launchY;
+      f.endY = landY;
+
+      // Prime tail with the start position so the trail doesn't render
+      // a line from the previous flight's last frame.
       for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
         tailPositions[i * 3 + 0] = f.startX;
         tailPositions[i * 3 + 1] = f.startY;
       }
+      f.phase = "flight";
+      f.phaseStart = now;
     }
 
-    // Active flight?
-    if (f.activeStart >= 0) {
-      const rawFlightT = (now - f.activeStart) / COMET_FLIGHT_DURATION_S;
-      const flightT = debugMode === "freeze" ? 0.5 : rawFlightT;
+    // ───── flight (rainbow arc) ─────
+    if (f.phase === "flight") {
+      const rawT = (now - f.phaseStart) / COMET_FLIGHT_DURATION_S;
+      const flightT = debugMode === "freeze" ? 0.5 : rawT;
 
       if (flightT >= 1) {
-        // Done. Park, schedule next.
-        f.activeStart = -1;
-        f.nextSpawnAt =
-          debugMode === "loop"
-            ? now + 0.05
-            : now +
-              COMET_INTERVAL_MIN_S +
-              Math.random() * (COMET_INTERVAL_MAX_S - COMET_INTERVAL_MIN_S);
+        // Land! Spawn explosion at end point, hide the comet trail+head.
+        const landX = f.endX;
+        const landY = f.endY;
+
+        for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed =
+            EXPLOSION_SPEED_MIN_PX_S +
+            Math.random() *
+              (EXPLOSION_SPEED_MAX_PX_S - EXPLOSION_SPEED_MIN_PX_S);
+          explPositions[i * 3 + 0] = landX;
+          explPositions[i * 3 + 1] = landY;
+          // velocities — radial + a tiny upward kick so the burst
+          // arches upward before gravity reclaims it
+          explVelocities[i * 2 + 0] = Math.cos(angle) * speed;
+          explVelocities[i * 2 + 1] =
+            Math.sin(angle) * speed + EXPLOSION_UPWARD_BIAS_PX_S;
+        }
+
+        // Hide comet during explosion
         for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
           tailPositions[i * 3 + 0] = COMET_OFF_SCREEN;
           tailPositions[i * 3 + 1] = COMET_OFF_SCREEN;
         }
         headPosition[0] = COMET_OFF_SCREEN;
         headPosition[1] = COMET_OFF_SCREEN;
+
+        f.phase = "explode";
+        f.phaseStart = now;
       } else {
-        // Eased path so the comet decelerates slightly at the right edge.
-        const eased = flightT * (2 - flightT); // ease-out quadratic
-        const headX = f.startX + (f.endX - f.startX) * eased;
-        const headY = f.startY + (f.endY - f.startY) * eased;
+        // Parabolic arc: linear chord + 4·h·t·(1-t) lift above the chord.
+        // Easing on the chord so the comet decelerates as it climbs and
+        // accelerates as it falls (mass-on-a-string feel).
+        const eased = flightT * (2 - flightT); // ease-out for the chord
+        const chordX = f.startX + (f.endX - f.startX) * eased;
+        const chordY = f.startY + (f.endY - f.startY) * eased;
+        // Arc lift uses the un-eased t so the peak sits at t=0.5 (mid-flight).
+        const arcLift =
+          4 * COMET_ARC_HEIGHT_PX * flightT * (1 - flightT);
+        const headX = chordX;
+        const headY = chordY + arcLift;
 
         // Shift tail history (newest goes to slot 0).
         for (let i = COMET_TAIL_LENGTH - 1; i > 0; i--) {
@@ -805,6 +866,43 @@ function CometStreak() {
       }
     }
 
+    // ───── explosion ─────
+    if (f.phase === "explode") {
+      const age = now - f.phaseStart;
+      const t = age / EXPLOSION_DURATION_S;
+
+      if (t >= 1) {
+        // Burst finished. Park, schedule next comet.
+        for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+          explPositions[i * 3 + 0] = COMET_OFF_SCREEN;
+          explPositions[i * 3 + 1] = COMET_OFF_SCREEN;
+        }
+        f.phase = "idle";
+        f.nextSpawnAt =
+          debugMode === "loop"
+            ? now + 0.4
+            : now +
+              COMET_INTERVAL_MIN_S +
+              Math.random() *
+                (COMET_INTERVAL_MAX_S - COMET_INTERVAL_MIN_S);
+      } else {
+        // Integrate each fragment: position += velocity·dt; velocity.y -= g·dt.
+        for (let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
+          explPositions[i * 3 + 0] += explVelocities[i * 2 + 0] * dt;
+          explPositions[i * 3 + 1] += explVelocities[i * 2 + 1] * dt;
+          explVelocities[i * 2 + 1] -= EXPLOSION_GRAVITY_PX_S2 * dt;
+        }
+        // Pass age to the shader for fade.
+        if (explRef.current) {
+          const mat = explRef.current
+            .material as THREE.ShaderMaterial;
+          if (mat.uniforms && mat.uniforms.uAge)
+            mat.uniforms.uAge.value = t;
+        }
+      }
+    }
+
+    // ───── flush buffer updates ─────
     if (tailRef.current) {
       (
         tailRef.current.geometry.attributes
@@ -814,6 +912,12 @@ function CometStreak() {
     if (headRef.current) {
       (
         headRef.current.geometry.attributes
+          .position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+    if (explRef.current) {
+      (
+        explRef.current.geometry.attributes
           .position as THREE.BufferAttribute
       ).needsUpdate = true;
     }
@@ -899,6 +1003,58 @@ function CometStreak() {
     });
   }, []);
 
+  const explosionMaterial = useMemo(() => {
+    const dpr =
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    return new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        uniform float uAge;          // 0 at burst, 1 at end
+        uniform float uHeadSize;
+        uniform float uTailSize;
+        uniform float uCount;
+        varying float vAlpha;
+        varying float vIdxNorm;
+        void main() {
+          float idx = position.z;
+          vIdxNorm = idx / max(uCount - 1.0, 1.0);
+          // Each fragment fades and shrinks with the same age curve.
+          // Small per-particle phase offset so they twinkle out unevenly.
+          float phase = clamp(uAge + (vIdxNorm - 0.5) * 0.18, 0.0, 1.0);
+          vAlpha = pow(1.0 - phase, 1.4);
+          float size = mix(uHeadSize, uTailSize, phase);
+          gl_PointSize = size;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying float vAlpha;
+        varying float vIdxNorm;
+        void main() {
+          vec2 c = gl_PointCoord - vec2(0.5);
+          float d = length(c);
+          if (d > 0.5) discard;
+          float radial = smoothstep(0.5, 0.0, d);
+          // Warm sparks: yellow-white core that drifts toward amber as a
+          // function of the per-particle index (just a little chromatic
+          // variety across the fragments).
+          vec3 hot = vec3(1.0, 0.96, 0.82);
+          vec3 amber = vec3(1.0, 0.71, 0.34);
+          vec3 col = mix(hot, amber, vIdxNorm);
+          gl_FragColor = vec4(col * vAlpha, vAlpha * radial);
+        }
+      `,
+      uniforms: {
+        uAge: { value: 1.0 }, // start "done" so nothing renders until armed
+        uHeadSize: { value: EXPLOSION_HEAD_SIZE_PX * dpr },
+        uTailSize: { value: EXPLOSION_TAIL_SIZE_PX * dpr },
+        uCount: { value: EXPLOSION_PARTICLE_COUNT },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+  }, []);
+
   return (
     <>
       {/* Streaking tail: a 48-point trail where each point has size + alpha
@@ -920,6 +1076,18 @@ function CometStreak() {
           <bufferAttribute
             attach="attributes-position"
             args={[headPosition, 3]}
+          />
+        </bufferGeometry>
+      </points>
+
+      {/* Explosion burst: 48 radial fragments launched when the comet lands.
+          Per-particle size shrinks with age via the uAge uniform; per-particle
+          random index in position.z gives small color variation. */}
+      <points ref={explRef} material={explosionMaterial}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[explPositions, 3]}
           />
         </bufferGeometry>
       </points>
