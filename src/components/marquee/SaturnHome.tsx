@@ -123,31 +123,41 @@ const MOON_REPEL_STRENGTH = 2400;
 // toward that moving anchor, so the saucer body wobbles slightly as it
 // flies — feels alive.
 
-const N_SHIP_SAUCER = 130;        // flat disc body
-const N_SHIP_DOME = 45;           // upper cupola
-const N_SHIP_LIGHTS = 5;
+// Classic UFO silhouette: oblate body (lens shape) + dome on top + ring
+// of running lights around the underside. The whole ship is tilted ~22°
+// so we see the body as a proper ellipse from the viewer's angle (not a
+// flat horizontal line). Same chunky moon-particle aesthetic.
+
+const N_SHIP_BODY = 200;          // oblate spheroid hull
+const N_SHIP_DOME = 80;           // dome on top
+const N_SHIP_RIM = 100;           // bright outer rim band (Saturn-style highlight)
+const N_SHIP_LIGHTS = 6;
 const N_PER_SHIP_LIGHT = 9;
 const N_SHIP_LIGHT_TOTAL = N_SHIP_LIGHTS * N_PER_SHIP_LIGHT;
 
-const SHIP_SAUCER_RX = 0.42;      // saucer half-width
-const SHIP_SAUCER_RZ = 0.42;
-const SHIP_SAUCER_THICKNESS = 0.04;
-const SHIP_DOME_R = 0.14;
-const SHIP_LIGHT_SPACING = 0.13;   // horizontal spacing between underbelly lights
-const SHIP_LIGHT_RADIUS = 0.018;   // each light cluster radius
-const SHIP_BODY_DROP = 0.06;       // how far below the saucer the lights hang
+const SHIP_BODY_R = 0.36;         // body radius before flattening
+const SHIP_BODY_FLATTEN_Y = 0.38; // Y scale → discus/lens shape
+const SHIP_DOME_R = 0.16;
+const SHIP_RIM_INNER_R = 0.32;    // bright rim (Saturn-style ring around the hull)
+const SHIP_RIM_OUTER_R = 0.42;
+const SHIP_RIM_TILT_DEG = 0;      // rim is coplanar with body (the whole ship is tilted)
+const SHIP_LIGHT_ORBITAL_R = 0.30; // lights distributed around a circle on the underside
+const SHIP_LIGHT_DROP = 0.06;     // how far below the rim they hang
+const SHIP_LIGHT_CLUSTER_R = 0.018;
+const SHIP_TILT_DEG = 22;         // overall pitch — same character as Saturn's ring tilt
 
 const SHIP_PARTICLE_RADIUS = 0.022;
-const SHIP_SAUCER_COLOR = "#A09483";
-const SHIP_DOME_COLOR = "#3DA9FC";    // glowing cyan dome
-const SHIP_LIGHT_COLOR = "#F0A256";   // amber pulse lights
+const SHIP_BODY_COLOR = "#A09483";    // warm steel hull
+const SHIP_RIM_COLOR = "#D4C6AC";     // brighter highlight on the rim edge
+const SHIP_DOME_COLOR = "#3DA9FC";    // cyan dome glow
+const SHIP_LIGHT_COLOR = "#F0A256";   // amber underside lights
 
-const SHIP_SPRING_K = 0.14;        // tight follow so the ship feels solid
+const SHIP_SPRING_K = 0.14;
 const SHIP_DAMPING = 0.86;
-const SHIP_CURSOR_LAG = 0.04;      // smoothing on the target so motion is fluid
+const SHIP_CURSOR_LAG = 0.05;
 
-// Flight path tuning — multiple sinusoids superposed so the path never
-// repeats and visits different regions of the viewport.
+// Flight path tuning — Lissajous superposition so the path never repeats
+// and the ship visits the whole viewport.
 const SHIP_PATH_X_AMP = 0.55;     // fraction of halfW
 const SHIP_PATH_Y_AMP = 0.42;     // fraction of halfH
 const SHIP_PATH_X_FREQ = 0.21;
@@ -1000,6 +1010,21 @@ function HouseField() {
 // the ship — particles spring after the saucer center so the body
 // wobbles slightly, just enough to feel alive.
 
+// Rotate a Float32Array of XYZ positions around the X axis by `deg` (deg).
+// Used to tilt the entire saucer so its disc-plane is visible as an
+// ellipse from the camera (not edge-on as a flat line).
+function tiltAroundX(positions: Float32Array, deg: number): void {
+  const a = (deg * Math.PI) / 180;
+  const ct = Math.cos(a);
+  const st = Math.sin(a);
+  for (let i = 0; i < positions.length; i += 3) {
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    positions[i + 1] = y * ct - z * st;
+    positions[i + 2] = y * st + z * ct;
+  }
+}
+
 function AlienShipField() {
   const { size } = useThree();
   const aspect = size.width / Math.max(size.height, 1);
@@ -1007,27 +1032,45 @@ function AlienShipField() {
   const halfH = CAM_Z * Math.tan(fovRad / 2);
   const halfW = halfH * aspect;
 
-  // Build all part anchors as local offsets relative to the ship center.
+  // Build all part anchors as local offsets, then tilt the whole ship
+  // around X so we see the saucer disc as an ellipse not a line.
   const data = useMemo(() => {
-    const saucer = sampleDisc(
-      N_SHIP_SAUCER,
-      SHIP_SAUCER_RX,
-      SHIP_SAUCER_RZ,
-      SHIP_SAUCER_THICKNESS,
-    );
-    // Dome sits above the saucer (y is up in this canvas)
-    const dome = sampleDome(N_SHIP_DOME, SHIP_DOME_R);
-    for (let i = 0; i < N_SHIP_DOME; i++) {
-      dome[i * 3 + 1] += SHIP_SAUCER_THICKNESS / 2;
+    // Body: solid sphere, flattened in Y → discus/lens shape (the hull)
+    const body = sampleSolidSphere(N_SHIP_BODY, SHIP_BODY_R);
+    for (let i = 0; i < N_SHIP_BODY; i++) {
+      body[i * 3 + 1] *= SHIP_BODY_FLATTEN_Y;
     }
-    // Underbelly lights: row of small clusters along X, dropped below the
-    // disc by SHIP_BODY_DROP.
+
+    // Bright rim band — a Saturn-style ring tracing the saucer's
+    // equator, slightly bigger than the hull so it reads as a flange
+    // around the lens.
+    const rim = sampleRingLocal(
+      N_SHIP_RIM,
+      SHIP_RIM_INNER_R,
+      SHIP_RIM_OUTER_R,
+    );
+    // Coplanar with the body's equator (it's already flat XZ from
+    // sampleRingLocal). Tilt comes later.
+    void SHIP_RIM_TILT_DEG;
+
+    // Dome on top of the hull (hemisphere).
+    const dome = sampleDome(N_SHIP_DOME, SHIP_DOME_R);
+    const hullTopY = SHIP_BODY_R * SHIP_BODY_FLATTEN_Y;
+    for (let i = 0; i < N_SHIP_DOME; i++) {
+      dome[i * 3 + 1] += hullTopY * 0.7; // sit it just inside the hull top
+    }
+
+    // Underside running lights — 6 clusters distributed around a circle
+    // beneath the hull's equator. Each cluster is a small sphere of
+    // particles, like a Christmas-light bulb.
     const lights = new Float32Array(N_SHIP_LIGHT_TOTAL * 3);
     for (let l = 0; l < N_SHIP_LIGHTS; l++) {
-      const cx = (l - (N_SHIP_LIGHTS - 1) / 2) * SHIP_LIGHT_SPACING;
+      const angle = (l / N_SHIP_LIGHTS) * Math.PI * 2;
+      const cx = Math.cos(angle) * SHIP_LIGHT_ORBITAL_R;
+      const cz = Math.sin(angle) * SHIP_LIGHT_ORBITAL_R;
+      const cy = -SHIP_BODY_R * SHIP_BODY_FLATTEN_Y - SHIP_LIGHT_DROP;
       for (let p = 0; p < N_PER_SHIP_LIGHT; p++) {
         const idx = (l * N_PER_SHIP_LIGHT + p) * 3;
-        // Random point inside a small sphere
         let dx = 0;
         let dy = 0;
         let dz = 0;
@@ -1038,22 +1081,27 @@ function AlienShipField() {
           dz = Math.random() * 2 - 1;
           d2 = dx * dx + dy * dy + dz * dz;
         }
-        lights[idx + 0] = cx + dx * SHIP_LIGHT_RADIUS;
-        lights[idx + 1] =
-          -SHIP_SAUCER_THICKNESS / 2 - SHIP_BODY_DROP +
-          dy * SHIP_LIGHT_RADIUS;
-        lights[idx + 2] = dz * SHIP_LIGHT_RADIUS * 0.3;
+        lights[idx + 0] = cx + dx * SHIP_LIGHT_CLUSTER_R;
+        lights[idx + 1] = cy + dy * SHIP_LIGHT_CLUSTER_R;
+        lights[idx + 2] = cz + dz * SHIP_LIGHT_CLUSTER_R;
       }
     }
-    return { saucer, dome, lights };
+
+    // Pitch the whole ship forward so the saucer disc reads as an
+    // ellipse (proper UFO 3/4 angle), not a horizontal line.
+    tiltAroundX(body, SHIP_TILT_DEG);
+    tiltAroundX(rim, SHIP_TILT_DEG);
+    tiltAroundX(dome, SHIP_TILT_DEG);
+    tiltAroundX(lights, SHIP_TILT_DEG);
+
+    return { body, rim, dome, lights };
   }, []);
 
-  // Live position + previous (Verlet) per part. Initialized at anchor + a
-  // far-off-origin to start, so the ship slides in from somewhere
-  // off-screen.
+  // Live position + previous (Verlet) per part.
   const positionsByPart = useMemo(
     () => ({
-      saucer: new Float32Array(data.saucer),
+      body: new Float32Array(data.body),
+      rim: new Float32Array(data.rim),
       dome: new Float32Array(data.dome),
       lights: new Float32Array(data.lights),
     }),
@@ -1061,14 +1109,16 @@ function AlienShipField() {
   );
   const prevByPart = useMemo(
     () => ({
-      saucer: new Float32Array(data.saucer),
+      body: new Float32Array(data.body),
+      rim: new Float32Array(data.rim),
       dome: new Float32Array(data.dome),
       lights: new Float32Array(data.lights),
     }),
     [data],
   );
 
-  const saucerRef = useRef<THREE.InstancedMesh>(null);
+  const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const rimRef = useRef<THREE.InstancedMesh>(null);
   const domeRef = useRef<THREE.InstancedMesh>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
 
@@ -1080,11 +1130,11 @@ function AlienShipField() {
 
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
+    void dt;
     const t = state.clock.elapsedTime;
 
-    // Compute target position via Lissajous-superposition. Two sinusoids
-    // per axis at different frequencies + phase → complex non-repeating
-    // path that visits the whole viewport.
+    // Lissajous-superposition path — two sinusoids per axis at different
+    // frequencies + phases → complex non-repeating wander.
     const tx =
       (Math.cos(t * SHIP_PATH_X_FREQ + SHIP_PATH_X_PHASE) *
         SHIP_PATH_X_AMP +
@@ -1097,10 +1147,7 @@ function AlienShipField() {
       halfH;
     targetPos.current.set(tx, ty);
 
-    // Smooth the ship's own position toward the target so the path is
-    // fluid even if we tune the formula later.
     shipPos.current.lerp(targetPos.current, SHIP_CURSOR_LAG);
-
     const sx = shipPos.current.x;
     const sy = shipPos.current.y;
 
@@ -1142,7 +1189,8 @@ function AlienShipField() {
       }
     };
 
-    update(data.saucer, positionsByPart.saucer, prevByPart.saucer);
+    update(data.body, positionsByPart.body, prevByPart.body);
+    update(data.rim, positionsByPart.rim, prevByPart.rim);
     update(data.dome, positionsByPart.dome, prevByPart.dome);
     update(data.lights, positionsByPart.lights, prevByPart.lights);
 
@@ -1166,16 +1214,21 @@ function AlienShipField() {
       mesh.instanceMatrix.needsUpdate = true;
     };
 
-    writeMesh(saucerRef.current, positionsByPart.saucer);
+    writeMesh(bodyRef.current, positionsByPart.body);
+    writeMesh(rimRef.current, positionsByPart.rim);
     writeMesh(domeRef.current, positionsByPart.dome);
     writeMesh(lightsRef.current, positionsByPart.lights);
   });
 
   return (
     <>
-      <instancedMesh ref={saucerRef} args={[undefined, undefined, N_SHIP_SAUCER]}>
+      <instancedMesh ref={bodyRef} args={[undefined, undefined, N_SHIP_BODY]}>
         <sphereGeometry args={[SHIP_PARTICLE_RADIUS, 10, 10]} />
-        <meshBasicMaterial color={SHIP_SAUCER_COLOR} toneMapped={false} />
+        <meshBasicMaterial color={SHIP_BODY_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={rimRef} args={[undefined, undefined, N_SHIP_RIM]}>
+        <sphereGeometry args={[SHIP_PARTICLE_RADIUS * 0.9, 10, 10]} />
+        <meshBasicMaterial color={SHIP_RIM_COLOR} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={domeRef} args={[undefined, undefined, N_SHIP_DOME]}>
         <sphereGeometry args={[SHIP_PARTICLE_RADIUS, 10, 10]} />
@@ -1185,7 +1238,7 @@ function AlienShipField() {
         ref={lightsRef}
         args={[undefined, undefined, N_SHIP_LIGHT_TOTAL]}
       >
-        <sphereGeometry args={[SHIP_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <sphereGeometry args={[SHIP_PARTICLE_RADIUS * 0.95, 10, 10]} />
         <meshBasicMaterial color={SHIP_LIGHT_COLOR} toneMapped={false} />
       </instancedMesh>
     </>
