@@ -114,6 +114,51 @@ const SATURN_BODY_REPEL_STRENGTH = 6500;
 const MOON_REPEL_RADIUS_PX = 58;
 const MOON_REPEL_STRENGTH = 2400;
 
+// ────────── particle house ──────────
+//
+// A tiny house in the bottom-right of the hero, built out of the same
+// chunky particles as the moons so it reads as part of the cosmic scene
+// rather than a UI element pasted on top. Each part (body, roof, chimney,
+// door, windows, plinth) is its own InstancedMesh with a single material —
+// same architecture as the Saturn body/ring/moons.
+
+const HOUSE_CENTER_X = 3.05;       // world units, right side
+const HOUSE_CENTER_Y = -1.75;      // bottom area
+const HOUSE_BODY_W = 0.22;
+const HOUSE_BODY_H = 0.16;
+const HOUSE_BODY_D = 0.16;
+const HOUSE_ROOF_W = 0.30;
+const HOUSE_ROOF_H = 0.11;
+const HOUSE_ROOF_D = 0.18;
+const HOUSE_CHIMNEY_W = 0.03;
+const HOUSE_CHIMNEY_H = 0.07;
+const HOUSE_CHIMNEY_D = 0.03;
+const HOUSE_DOOR_W = 0.035;
+const HOUSE_DOOR_H = 0.075;
+const HOUSE_DOOR_D = 0.012;
+const HOUSE_WINDOW_W = 0.028;
+const HOUSE_WINDOW_H = 0.028;
+const HOUSE_WINDOW_D = 0.010;
+const HOUSE_PLINTH_RX = 0.20;
+const HOUSE_PLINTH_RZ = 0.07;
+
+const N_HOUSE_BODY = 110;
+const N_HOUSE_ROOF = 75;
+const N_HOUSE_CHIMNEY = 18;
+const N_HOUSE_DOOR = 14;
+const N_HOUSE_WINDOW = 10; // per window
+const N_HOUSE_PLINTH = 48;
+
+// Same particle radius as the moons for visual consistency.
+const HOUSE_PARTICLE_RADIUS = 0.022;
+
+const HOUSE_BODY_COLOR = "#F5F2EC";     // bone walls (matches text)
+const HOUSE_ROOF_COLOR = "#C97D3E";     // amber roof (matches saturn)
+const HOUSE_CHIMNEY_COLOR = "#9A8C73";  // warm grey
+const HOUSE_DOOR_COLOR = "#7A4A2E";     // dark amber
+const HOUSE_WINDOW_COLOR = "#3DA9FC";   // string blue (matches moons)
+const HOUSE_PLINTH_COLOR = "#3DA9FC";   // glass plinth, same blue family
+
 // ─────────── samplers ───────────
 
 function sampleWordAnchors(
@@ -198,6 +243,63 @@ function sampleSolidSphere(N: number, R: number): Float32Array {
     out[i * 3 + 0] = x * R * bias;
     out[i * 3 + 1] = y * R * bias;
     out[i * 3 + 2] = z * R * bias;
+  }
+  return out;
+}
+
+function sampleBox(N: number, w: number, h: number, d: number): Float32Array {
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    out[i * 3 + 0] = (Math.random() - 0.5) * w;
+    out[i * 3 + 1] = (Math.random() - 0.5) * h;
+    out[i * 3 + 2] = (Math.random() - 0.5) * d;
+  }
+  return out;
+}
+
+// Triangular prism (roof shape) — wide base, narrow apex at top, extruded
+// along Z. Sampled uniformly in volume so density is even.
+function sampleRoof(
+  N: number,
+  baseW: number,
+  height: number,
+  depth: number,
+): Float32Array {
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    // Sample a row Y (uniform in volume → height weighted)
+    // For a triangle whose width = baseW * (1 - y/height), the
+    // y-PDF should be proportional to that width. Inverse-CDF
+    // sampling gives y = height * (1 - sqrt(1 - rand)).
+    const y = height * (1 - Math.sqrt(1 - Math.random()));
+    const xWidth = baseW * (1 - y / height);
+    out[i * 3 + 0] = (Math.random() - 0.5) * xWidth;
+    out[i * 3 + 1] = y - height / 2;
+    out[i * 3 + 2] = (Math.random() - 0.5) * depth;
+  }
+  return out;
+}
+
+// A thin oval pad (flat disk-ish) — for the glass plinth under the house.
+function sampleFlatEllipse(
+  N: number,
+  rx: number,
+  rz: number,
+): Float32Array {
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    // Rejection-sample inside the unit disk
+    let x = 0;
+    let z = 0;
+    let d2 = 2;
+    while (d2 > 1) {
+      x = Math.random() * 2 - 1;
+      z = Math.random() * 2 - 1;
+      d2 = x * x + z * z;
+    }
+    out[i * 3 + 0] = x * rx;
+    out[i * 3 + 1] = (Math.random() - 0.5) * 0.012; // very thin
+    out[i * 3 + 2] = z * rz;
   }
   return out;
 }
@@ -337,6 +439,181 @@ function TextField({ anchors }: { anchors: Float32Array }) {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
     </points>
+  );
+}
+
+// ─────────── particle house (static InstancedMeshes) ───────────
+//
+// A tiny house assembled from the same chunky overlapping particles as the
+// moons. Static — no Verlet, no useFrame — just six InstancedMeshes whose
+// matrices are written once on mount. Lives in the Saturn canvas's
+// perspective world space, anchored at (HOUSE_CENTER_X, HOUSE_CENTER_Y).
+//
+// Layout (relative to center):
+//   plinth   y = -0.10  (translucent oval underneath)
+//   body     y =  0.00  (the walls)
+//   door     y = -0.04  on the front face (z = +body.d/2)
+//   windows  y = +0.02  on the front face, flanking the door
+//   roof     y = +0.135 (triangular prism on top)
+//   chimney  y = +0.165 (small box poking out of the roof, offset right)
+
+function HouseParticles() {
+  // Build all part anchor sets once.
+  const parts = useMemo(() => {
+    return {
+      body: sampleBox(N_HOUSE_BODY, HOUSE_BODY_W, HOUSE_BODY_H, HOUSE_BODY_D),
+      roof: sampleRoof(N_HOUSE_ROOF, HOUSE_ROOF_W, HOUSE_ROOF_H, HOUSE_ROOF_D),
+      chimney: sampleBox(
+        N_HOUSE_CHIMNEY,
+        HOUSE_CHIMNEY_W,
+        HOUSE_CHIMNEY_H,
+        HOUSE_CHIMNEY_D,
+      ),
+      door: sampleBox(
+        N_HOUSE_DOOR,
+        HOUSE_DOOR_W,
+        HOUSE_DOOR_H,
+        HOUSE_DOOR_D,
+      ),
+      windowLeft: sampleBox(
+        N_HOUSE_WINDOW,
+        HOUSE_WINDOW_W,
+        HOUSE_WINDOW_H,
+        HOUSE_WINDOW_D,
+      ),
+      windowRight: sampleBox(
+        N_HOUSE_WINDOW,
+        HOUSE_WINDOW_W,
+        HOUSE_WINDOW_H,
+        HOUSE_WINDOW_D,
+      ),
+      plinth: sampleFlatEllipse(
+        N_HOUSE_PLINTH,
+        HOUSE_PLINTH_RX,
+        HOUSE_PLINTH_RZ,
+      ),
+    };
+  }, []);
+
+  // Refs for each mesh
+  const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const roofRef = useRef<THREE.InstancedMesh>(null);
+  const chimneyRef = useRef<THREE.InstancedMesh>(null);
+  const doorRef = useRef<THREE.InstancedMesh>(null);
+  const windowLeftRef = useRef<THREE.InstancedMesh>(null);
+  const windowRightRef = useRef<THREE.InstancedMesh>(null);
+  const plinthRef = useRef<THREE.InstancedMesh>(null);
+
+  // Write the per-instance matrices once on mount.
+  useEffect(() => {
+    const tmp = new THREE.Object3D();
+
+    const write = (
+      mesh: THREE.InstancedMesh | null,
+      anchors: Float32Array,
+      offsetX: number,
+      offsetY: number,
+      offsetZ: number,
+    ) => {
+      if (!mesh) return;
+      const count = anchors.length / 3;
+      for (let i = 0; i < count; i++) {
+        tmp.position.set(
+          HOUSE_CENTER_X + offsetX + anchors[i * 3 + 0],
+          HOUSE_CENTER_Y + offsetY + anchors[i * 3 + 1],
+          offsetZ + anchors[i * 3 + 2],
+        );
+        tmp.updateMatrix();
+        mesh.setMatrixAt(i, tmp.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+
+    // Body sits at the center (offsetY 0). Door pokes out toward camera.
+    write(bodyRef.current, parts.body, 0, 0, 0);
+    write(roofRef.current, parts.roof, 0, HOUSE_BODY_H / 2 + HOUSE_ROOF_H / 2, 0);
+    write(
+      chimneyRef.current,
+      parts.chimney,
+      HOUSE_BODY_W * 0.22,
+      HOUSE_BODY_H / 2 + HOUSE_ROOF_H * 0.45 + HOUSE_CHIMNEY_H / 2,
+      0,
+    );
+    write(
+      doorRef.current,
+      parts.door,
+      0,
+      -HOUSE_BODY_H / 2 + HOUSE_DOOR_H / 2,
+      HOUSE_BODY_D / 2 + HOUSE_DOOR_D / 2 - 0.002,
+    );
+    write(
+      windowLeftRef.current,
+      parts.windowLeft,
+      -HOUSE_BODY_W * 0.28,
+      HOUSE_BODY_H * 0.12,
+      HOUSE_BODY_D / 2 + HOUSE_WINDOW_D / 2 - 0.002,
+    );
+    write(
+      windowRightRef.current,
+      parts.windowRight,
+      HOUSE_BODY_W * 0.28,
+      HOUSE_BODY_H * 0.12,
+      HOUSE_BODY_D / 2 + HOUSE_WINDOW_D / 2 - 0.002,
+    );
+    write(
+      plinthRef.current,
+      parts.plinth,
+      0,
+      -HOUSE_BODY_H / 2 - 0.02,
+      0,
+    );
+  }, [parts]);
+
+  return (
+    <>
+      <instancedMesh ref={plinthRef} args={[undefined, undefined, N_HOUSE_PLINTH]}>
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.7, 10, 10]} />
+        <meshBasicMaterial
+          color={HOUSE_PLINTH_COLOR}
+          transparent
+          opacity={0.45}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={bodyRef} args={[undefined, undefined, N_HOUSE_BODY]}>
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_BODY_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={roofRef} args={[undefined, undefined, N_HOUSE_ROOF]}>
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_ROOF_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={chimneyRef}
+        args={[undefined, undefined, N_HOUSE_CHIMNEY]}
+      >
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_CHIMNEY_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={doorRef} args={[undefined, undefined, N_HOUSE_DOOR]}>
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_DOOR_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={windowLeftRef}
+        args={[undefined, undefined, N_HOUSE_WINDOW]}
+      >
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_WINDOW_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={windowRightRef}
+        args={[undefined, undefined, N_HOUSE_WINDOW]}
+      >
+        <sphereGeometry args={[HOUSE_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <meshBasicMaterial color={HOUSE_WINDOW_COLOR} toneMapped={false} />
+      </instancedMesh>
+    </>
   );
 }
 
@@ -1264,85 +1541,7 @@ export function SaturnHome() {
 
 
 
-      {/* Tiny house on a glass platform in the bottom-right corner. A cozy
-          counterweight to the Saturn cursor floating around the rest of
-          the screen. Smaller than the Saturn body so it doesn't compete. */}
-      <div
-        className="pointer-events-none absolute bottom-6 right-6 z-[6]"
-        aria-hidden
-      >
-        <svg width="52" height="46" viewBox="0 0 52 46" fill="none">
-          {/* Glass plinth — translucent oval base with a soft string-blue tint */}
-          <ellipse
-            cx="26"
-            cy="42"
-            rx="24"
-            ry="2.6"
-            fill="#3DA9FC"
-            fillOpacity="0.16"
-          />
-          <ellipse
-            cx="26"
-            cy="42"
-            rx="24"
-            ry="2.6"
-            stroke="#3DA9FC"
-            strokeOpacity="0.32"
-            strokeWidth="0.6"
-          />
-          {/* Roof */}
-          <polygon
-            points="7,22 26,9 45,22"
-            fill="#C97D3E"
-            stroke="#7A4A2E"
-            strokeWidth="0.7"
-          />
-          {/* Chimney (drawn behind the front of the roof so it pokes out) */}
-          <rect x="33" y="11" width="3.6" height="7.2" fill="#7A6F5E" />
-          {/* House body */}
-          <rect
-            x="11"
-            y="22"
-            width="30"
-            height="17"
-            fill="#F5F2EC"
-            fillOpacity="0.9"
-            stroke="#7A6F5E"
-            strokeWidth="0.7"
-          />
-          {/* Door */}
-          <rect x="22" y="28" width="7" height="11" fill="#7A4A2E" />
-          <circle cx="27.6" cy="33.5" r="0.45" fill="#E2B071" />
-          {/* Windows */}
-          <rect
-            x="14.5"
-            y="25.5"
-            width="5"
-            height="4.5"
-            fill="#3DA9FC"
-            fillOpacity="0.55"
-            stroke="#7A6F5E"
-            strokeWidth="0.4"
-          />
-          <rect
-            x="32.5"
-            y="25.5"
-            width="5"
-            height="4.5"
-            fill="#3DA9FC"
-            fillOpacity="0.55"
-            stroke="#7A6F5E"
-            strokeWidth="0.4"
-          />
-          {/* Window mullions */}
-          <line x1="17" y1="25.5" x2="17" y2="30" stroke="#7A6F5E" strokeWidth="0.3" />
-          <line x1="35" y1="25.5" x2="35" y2="30" stroke="#7A6F5E" strokeWidth="0.3" />
-          <line x1="14.5" y1="27.75" x2="19.5" y2="27.75" stroke="#7A6F5E" strokeWidth="0.3" />
-          <line x1="32.5" y1="27.75" x2="37.5" y2="27.75" stroke="#7A6F5E" strokeWidth="0.3" />
-        </svg>
-      </div>
-
-      {/* Saturn canvas: perspective world space, transparent so text shows
+{/* Saturn canvas: perspective world space, transparent so text shows
           underneath. */}
       <Canvas
         camera={{ position: [0, 0, CAM_Z], fov: CAM_FOV_DEG }}
@@ -1355,6 +1554,7 @@ export function SaturnHome() {
         gl={{ alpha: true, antialias: true }}
       >
         <SaturnField />
+        <HouseParticles />
         <EffectComposer>
           <Bloom
             intensity={0.45}
