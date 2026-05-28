@@ -122,40 +122,41 @@ const MOON_REPEL_STRENGTH = 2400;
 // door, windows, plinth) is its own InstancedMesh with a single material —
 // same architecture as the Saturn body/ring/moons.
 
-const HOUSE_CENTER_X = 2.5;        // world units, right side
-const HOUSE_CENTER_Y = -1.4;       // bottom area
-// Larger overall footprint so the angular geometry can read — the previous
-// 0.22 wide body rendered as ~42px on screen, too small for the cube
-// silhouette to survive particle overlap.
-const HOUSE_BODY_W = 0.55;
-const HOUSE_BODY_H = 0.42;
-const HOUSE_BODY_D = 0.32;
-const HOUSE_ROOF_W = 0.70;         // slight overhang past the body
-const HOUSE_ROOF_H = 0.22;
-const HOUSE_ROOF_D = 0.34;
-const HOUSE_CHIMNEY_W = 0.07;
-const HOUSE_CHIMNEY_H = 0.13;
-const HOUSE_CHIMNEY_D = 0.07;
-const HOUSE_DOOR_W = 0.10;
-const HOUSE_DOOR_H = 0.20;
-const HOUSE_DOOR_D = 0.022;
-const HOUSE_WINDOW_W = 0.09;
-const HOUSE_WINDOW_H = 0.09;
-const HOUSE_WINDOW_D = 0.022;
-const HOUSE_PLINTH_RX = 0.40;
-const HOUSE_PLINTH_RZ = 0.16;
+const HOUSE_CENTER_X = 2.9;        // world units, tucked in the right corner
+const HOUSE_CENTER_Y = -1.55;      // lower band
+// Smaller footprint with much smaller particles so the silhouette reads as
+// a crisp little house rather than a chunky blob. Each particle is ~25%
+// the diameter of a moon particle, which gives us many more dots tracing
+// the cube and prism edges — like a fine pen-drawn house with cosmic dust.
+const HOUSE_BODY_W = 0.32;
+const HOUSE_BODY_H = 0.24;
+const HOUSE_BODY_D = 0.20;
+const HOUSE_ROOF_W = 0.40;         // slight overhang past the body
+const HOUSE_ROOF_H = 0.14;
+const HOUSE_ROOF_D = 0.22;
+const HOUSE_CHIMNEY_W = 0.04;
+const HOUSE_CHIMNEY_H = 0.08;
+const HOUSE_CHIMNEY_D = 0.04;
+const HOUSE_DOOR_W = 0.055;
+const HOUSE_DOOR_H = 0.105;
+const HOUSE_DOOR_D = 0.012;
+const HOUSE_WINDOW_W = 0.05;
+const HOUSE_WINDOW_H = 0.05;
+const HOUSE_WINDOW_D = 0.012;
+const HOUSE_PLINTH_RX = 0.24;
+const HOUSE_PLINTH_RZ = 0.10;
 
-// Body / roof use SHELL sampling (surface only) so the cube and prism
-// silhouettes survive. Solid-fill sampling at this density just blobs into
-// a sphere shape — same problem the moons solve by being naturally round.
+// Body / roof are EDGE-sampled (wireframe along the 12 cube edges / the
+// roof's ridges) so the angular geometry reads as a drawn outline. Small
+// parts stay solid-filled.
 const N_HOUSE_BODY = 220;
-const N_HOUSE_ROOF = 140;
+const N_HOUSE_ROOF = 160;
 const N_HOUSE_CHIMNEY = 28;
-const N_HOUSE_DOOR = 24;
-const N_HOUSE_WINDOW = 16; // per window
+const N_HOUSE_DOOR = 28;
+const N_HOUSE_WINDOW = 20; // per window
 const N_HOUSE_PLINTH = 70;
 
-const HOUSE_PARTICLE_RADIUS = 0.024;
+const HOUSE_PARTICLE_RADIUS = 0.012;
 
 const HOUSE_BODY_COLOR = "#F5F2EC";     // bone walls (matches text)
 const HOUSE_ROOF_COLOR = "#C97D3E";     // amber roof (matches saturn)
@@ -258,6 +259,123 @@ function sampleBox(N: number, w: number, h: number, d: number): Float32Array {
     out[i * 3 + 0] = (Math.random() - 0.5) * w;
     out[i * 3 + 1] = (Math.random() - 0.5) * h;
     out[i * 3 + 2] = (Math.random() - 0.5) * d;
+  }
+  return out;
+}
+
+// Box WIREFRAME — particles distributed along the 12 edges of the cube,
+// weighted by length. Reads as a drawn-outline cube even at low density.
+function sampleBoxWireframe(
+  N: number,
+  w: number,
+  h: number,
+  d: number,
+): Float32Array {
+  // 12 edges. Each: start point + axis (0/1/2) + length.
+  const edges: { sx: number; sy: number; sz: number; axis: 0 | 1 | 2; len: number }[] = [];
+  for (const y of [h / 2, -h / 2]) {
+    for (const z of [d / 2, -d / 2]) {
+      edges.push({ sx: -w / 2, sy: y, sz: z, axis: 0, len: w });
+    }
+  }
+  for (const x of [w / 2, -w / 2]) {
+    for (const z of [d / 2, -d / 2]) {
+      edges.push({ sx: x, sy: -h / 2, sz: z, axis: 1, len: h });
+    }
+  }
+  for (const x of [w / 2, -w / 2]) {
+    for (const y of [h / 2, -h / 2]) {
+      edges.push({ sx: x, sy: y, sz: -d / 2, axis: 2, len: d });
+    }
+  }
+  let total = 0;
+  for (const e of edges) total += e.len;
+
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    let r = Math.random() * total;
+    let edge = edges[0];
+    for (const e of edges) {
+      r -= e.len;
+      if (r <= 0) {
+        edge = e;
+        break;
+      }
+    }
+    const t = Math.random();
+    let x = edge.sx;
+    let y = edge.sy;
+    let z = edge.sz;
+    if (edge.axis === 0) x += t * edge.len;
+    else if (edge.axis === 1) y += t * edge.len;
+    else z += t * edge.len;
+    // Tiny jitter perpendicular to the edge so it reads as a chunky line
+    // rather than a pixel-perfect rod.
+    const jit = HOUSE_PARTICLE_RADIUS * 0.6;
+    out[i * 3 + 0] = x + (Math.random() - 0.5) * jit;
+    out[i * 3 + 1] = y + (Math.random() - 0.5) * jit;
+    out[i * 3 + 2] = z + (Math.random() - 0.5) * jit;
+  }
+  return out;
+}
+
+// Roof WIREFRAME — the visible edges of a triangular prism (top ridge +
+// 4 slant edges along the gables + 2 base edges along Z). Bottom triangle
+// edges (where the roof sits on the body) are omitted.
+function sampleRoofWireframe(
+  N: number,
+  baseW: number,
+  height: number,
+  depth: number,
+): Float32Array {
+  const slantLen = Math.sqrt((baseW / 2) * (baseW / 2) + height * height);
+  type Edge = {
+    sx: number;
+    sy: number;
+    sz: number;
+    ex: number;
+    ey: number;
+    ez: number;
+    len: number;
+  };
+  const edges: Edge[] = [
+    // Top ridge (along Z, at apex)
+    { sx: 0, sy: height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: depth },
+    // Bottom-left ridge (along Z, at base-left)
+    { sx: -baseW / 2, sy: -height / 2, sz: -depth / 2, ex: -baseW / 2, ey: -height / 2, ez: depth / 2, len: depth },
+    // Bottom-right ridge (along Z, at base-right)
+    { sx: baseW / 2, sy: -height / 2, sz: -depth / 2, ex: baseW / 2, ey: -height / 2, ez: depth / 2, len: depth },
+    // Front gable left slant
+    { sx: -baseW / 2, sy: -height / 2, sz: depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: slantLen },
+    // Front gable right slant
+    { sx: baseW / 2, sy: -height / 2, sz: depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: slantLen },
+    // Back gable left slant
+    { sx: -baseW / 2, sy: -height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: -depth / 2, len: slantLen },
+    // Back gable right slant
+    { sx: baseW / 2, sy: -height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: -depth / 2, len: slantLen },
+  ];
+  let total = 0;
+  for (const e of edges) total += e.len;
+
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    let r = Math.random() * total;
+    let edge = edges[0];
+    for (const e of edges) {
+      r -= e.len;
+      if (r <= 0) {
+        edge = e;
+        break;
+      }
+    }
+    const t = Math.random();
+    const jit = HOUSE_PARTICLE_RADIUS * 0.6;
+    out[i * 3 + 0] =
+      edge.sx + (edge.ex - edge.sx) * t + (Math.random() - 0.5) * jit;
+    out[i * 3 + 1] =
+      edge.sy + (edge.ey - edge.sy) * t + (Math.random() - 0.5) * jit;
+    out[i * 3 + 2] =
+      edge.sz + (edge.ez - edge.sz) * t + (Math.random() - 0.5) * jit;
   }
   return out;
 }
@@ -560,19 +678,19 @@ function HouseParticles() {
   // sampling — they're small enough to read as solid panels anyway.
   const parts = useMemo(() => {
     return {
-      body: sampleBoxShell(
+      body: sampleBoxWireframe(
         N_HOUSE_BODY,
         HOUSE_BODY_W,
         HOUSE_BODY_H,
         HOUSE_BODY_D,
       ),
-      roof: sampleRoofShell(
+      roof: sampleRoofWireframe(
         N_HOUSE_ROOF,
         HOUSE_ROOF_W,
         HOUSE_ROOF_H,
         HOUSE_ROOF_D,
       ),
-      chimney: sampleBoxShell(
+      chimney: sampleBoxWireframe(
         N_HOUSE_CHIMNEY,
         HOUSE_CHIMNEY_W,
         HOUSE_CHIMNEY_H,
@@ -1055,11 +1173,18 @@ function SaturnField() {
 // nucleus. Between flights the head parks off-screen so nothing renders.
 // Next flight is scheduled 7–14s later (randomized).
 
-// Tail = chunky overlapping points so Bloom catches the streak. A pure 1px
-// LineBasicMaterial is too thin for the post-fx to grab.
-const COMET_TAIL_LENGTH = 48;
-const COMET_TAIL_HEAD_SIZE_PX = 14;
-const COMET_TAIL_END_SIZE_PX = 2;
+// Tail = densely overlapping points so Bloom + Additive blend the
+// circles into a continuous streak. Key numbers:
+//   - K_INTERP: at each animation frame we insert this many interpolated
+//     trail positions between the previous head position and the new one,
+//     so the dots don't space out when the comet moves fast (was 1 → reads
+//     as a string of beads).
+//   - Sizes are large enough that successive dots overlap by 30%+ even at
+//     the tail end, so there are no visible gaps.
+const COMET_TAIL_LENGTH = 84;
+const COMET_TAIL_INTERP = 3;
+const COMET_TAIL_HEAD_SIZE_PX = 32;
+const COMET_TAIL_END_SIZE_PX = 8;
 const COMET_FLIGHT_DURATION_S = 2.4;          // longer flight for the bigger arc
 const COMET_INTERVAL_MIN_S = 7;
 const COMET_INTERVAL_MAX_S = 14;
@@ -1233,13 +1358,35 @@ function CometStreak() {
         const headX = chordX;
         const headY = chordY + arcLift;
 
-        // Shift tail history (newest goes to slot 0).
-        for (let i = COMET_TAIL_LENGTH - 1; i > 0; i--) {
-          tailPositions[i * 3 + 0] = tailPositions[(i - 1) * 3 + 0];
-          tailPositions[i * 3 + 1] = tailPositions[(i - 1) * 3 + 1];
+        // Read previous head position (slot 0 from last frame) so we can
+        // interpolate sub-frame positions and densify the streak.
+        const prevHeadX = tailPositions[0];
+        const prevHeadY = tailPositions[1];
+
+        // Shift tail history backwards by COMET_TAIL_INTERP slots so we
+        // can insert that many interpolated positions between the
+        // previous head and the new head.
+        for (
+          let i = COMET_TAIL_LENGTH - 1;
+          i >= COMET_TAIL_INTERP;
+          i--
+        ) {
+          tailPositions[i * 3 + 0] =
+            tailPositions[(i - COMET_TAIL_INTERP) * 3 + 0];
+          tailPositions[i * 3 + 1] =
+            tailPositions[(i - COMET_TAIL_INTERP) * 3 + 1];
         }
-        tailPositions[0] = headX;
-        tailPositions[1] = headY;
+        // Slot k in [0..K-1] gets a position fraction (K-k)/K of the way
+        // from previous head to current head. Slot 0 = current head; slot
+        // K-1 = just past the previous head.
+        for (let k = 0; k < COMET_TAIL_INTERP; k++) {
+          const frac =
+            (COMET_TAIL_INTERP - k) / COMET_TAIL_INTERP;
+          tailPositions[k * 3 + 0] =
+            prevHeadX + (headX - prevHeadX) * frac;
+          tailPositions[k * 3 + 1] =
+            prevHeadY + (headY - prevHeadY) * frac;
+        }
 
         headPosition[0] = headX;
         headPosition[1] = headY;
