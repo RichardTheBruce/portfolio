@@ -24,16 +24,19 @@ import * as THREE from "three";
 // ─────────── TEXT (Exp 01 mechanic) ───────────
 
 const WORD = "RichardTheBruce";
-const FONT_SIZE_PX = 160;          // sized so the full word fits within ~1200px on desktop
-const PARTICLE_TARGET = 5500;
+// Sized so the full word fits within ~1050px on a 1440px desktop with
+// comfortable edge margins. 8000 particles in this footprint give roughly
+// 35% letterform coverage — dense enough to read crisply.
+const FONT_SIZE_PX = 140;
+const PARTICLE_TARGET = 8000;
 const REST_SPRING_K = 0.04;
 const TEXT_DAMPING = 0.92;
-const REPEL_RADIUS_PX = 140;
-const REPEL_STRENGTH = 6000;
+const REPEL_RADIUS_PX = 130;
+const REPEL_STRENGTH = 5400;
 const REPEL_SOFT_FLOOR = 100;
-const POINT_SIZE_PX = 2.6;
+const POINT_SIZE_PX = 2.2;
 const POINT_COLOR = 0xf5f2ec; // bone
-const TEXT_VERTICAL_OFFSET_PX = -30; // nudge text up so subheader fits below
+const TEXT_VERTICAL_OFFSET_PX = -40; // nudge text up so subheader fits below
 
 // ─────────── SATURN (marquee mechanic, wall removed) ───────────
 
@@ -126,24 +129,43 @@ function sampleWordAnchors(
   octx.fillText(word, w / 2, h / 2);
   const img = octx.getImageData(0, 0, w, h).data;
 
-  let inked = 0;
-  for (let i = 3; i < img.length; i += 4) {
-    if (img[i] > 128) inked++;
-  }
-  if (inked === 0) return new Float32Array(0);
-
-  const stride = Math.max(1, Math.floor(Math.sqrt(inked / target)));
-  const out: number[] = [];
-  for (let y = 0; y < h && out.length / 3 < target; y += stride) {
-    for (let x = 0; x < w && out.length / 3 < target; x += stride) {
-      if (img[(y * w + x) * 4 + 3] > 128) {
-        out.push(x - w / 2);
-        out.push(-(y - h / 2) + TEXT_VERTICAL_OFFSET_PX);
-        out.push(0);
+  // Collect EVERY inked pixel coordinate, then random-subsample to target.
+  // The earlier stride+truncate approach iterated rows top-to-bottom and
+  // stopped when it hit target — which meant for small fonts (where
+  // stride collapsed to 1) the bottom half of the text never got sampled.
+  // Random sampling guarantees uniform coverage across the whole letterform.
+  const inked: number[] = [];
+  for (let y = 0; y < h; y++) {
+    const rowBase = y * w * 4 + 3;
+    for (let x = 0; x < w; x++) {
+      if (img[rowBase + x * 4] > 128) {
+        inked.push(x, y);
       }
     }
   }
-  return new Float32Array(out);
+  if (inked.length === 0) return new Float32Array(0);
+
+  // Fisher-Yates partial shuffle: shuffle just enough to pick `target`
+  // distinct anchors uniformly.
+  const totalInked = inked.length / 2;
+  const N = Math.min(target, totalInked);
+  for (let i = 0; i < N; i++) {
+    const j = i + Math.floor(Math.random() * (totalInked - i));
+    const ax = inked[i * 2];
+    const ay = inked[i * 2 + 1];
+    inked[i * 2] = inked[j * 2];
+    inked[i * 2 + 1] = inked[j * 2 + 1];
+    inked[j * 2] = ax;
+    inked[j * 2 + 1] = ay;
+  }
+
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    out[i * 3 + 0] = inked[i * 2] - w / 2;
+    out[i * 3 + 1] = -(inked[i * 2 + 1] - h / 2) + TEXT_VERTICAL_OFFSET_PX;
+    out[i * 3 + 2] = 0;
+  }
+  return out;
 }
 
 function sampleSolidSphere(N: number, R: number): Float32Array {
