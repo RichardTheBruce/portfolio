@@ -16,6 +16,7 @@
 
 import { Caustics } from "@/components/lab/Caustics";
 import { CurlNoiseField } from "@/components/lab/CurlNoiseField";
+import { CursorMagnet } from "@/components/lab/CursorMagnet";
 import { GalaxySpiral } from "@/components/lab/GalaxySpiral";
 import { GlitchBurst } from "@/components/lab/GlitchBurst";
 import { LatticeCube } from "@/components/lab/LatticeCube";
@@ -101,6 +102,11 @@ export default function LabPage() {
         index="Experiment 14"
         title="Underwater caustic light field"
         meta="fullscreen fragment shader · two-octave moving Gustavson snoise (drifts at 0.10 + 0.13 units/s, opposite directions for shear) · gradient ∇f estimated via central differences (ε=0.012) · caustic = 1/(1+|∇f|²·1.8)^2.4 · 3-stop palette: deep navy → amber → bone · cursor warps sample coords toward it (0.5x) so the light source migrates with you · vignette + Bloom for the underwater bias"
+      />
+      <CursorMagnet
+        index="Experiment 15"
+        title="Cursor magnet text — DOM constellation"
+        meta="9 phrases scattered in a viewport-relative grid · each tracks the cursor: within 220px the phrase translates toward the cursor with linear-falloff strength (0.35 peak) · per-phrase Verlet (K=0.22, damping=0.72) smooths the response so the words lean rather than snap · first DOM-based experiment in the lab — same physics pattern as the 3D rigs applied to CSS transforms"
       />
     </main>
   );
