@@ -114,6 +114,49 @@ const SATURN_BODY_REPEL_STRENGTH = 6500;
 const MOON_REPEL_RADIUS_PX = 58;
 const MOON_REPEL_STRENGTH = 2400;
 
+// ────────── alien saucer ──────────
+//
+// Classic flying-saucer silhouette built from the same chunky particles
+// as the moons. Lives in the saturn canvas's perspective world. Verlet-
+// physics anchored: each particle has a LOCAL offset (relative to the
+// saucer center) plus the moving saucer position. Spring pulls particles
+// toward that moving anchor, so the saucer body wobbles slightly as it
+// flies — feels alive.
+
+const N_SHIP_SAUCER = 130;        // flat disc body
+const N_SHIP_DOME = 45;           // upper cupola
+const N_SHIP_LIGHTS = 5;
+const N_PER_SHIP_LIGHT = 9;
+const N_SHIP_LIGHT_TOTAL = N_SHIP_LIGHTS * N_PER_SHIP_LIGHT;
+
+const SHIP_SAUCER_RX = 0.42;      // saucer half-width
+const SHIP_SAUCER_RZ = 0.42;
+const SHIP_SAUCER_THICKNESS = 0.04;
+const SHIP_DOME_R = 0.14;
+const SHIP_LIGHT_SPACING = 0.13;   // horizontal spacing between underbelly lights
+const SHIP_LIGHT_RADIUS = 0.018;   // each light cluster radius
+const SHIP_BODY_DROP = 0.06;       // how far below the saucer the lights hang
+
+const SHIP_PARTICLE_RADIUS = 0.022;
+const SHIP_SAUCER_COLOR = "#A09483";
+const SHIP_DOME_COLOR = "#3DA9FC";    // glowing cyan dome
+const SHIP_LIGHT_COLOR = "#F0A256";   // amber pulse lights
+
+const SHIP_SPRING_K = 0.14;        // tight follow so the ship feels solid
+const SHIP_DAMPING = 0.86;
+const SHIP_CURSOR_LAG = 0.04;      // smoothing on the target so motion is fluid
+
+// Flight path tuning — multiple sinusoids superposed so the path never
+// repeats and visits different regions of the viewport.
+const SHIP_PATH_X_AMP = 0.55;     // fraction of halfW
+const SHIP_PATH_Y_AMP = 0.42;     // fraction of halfH
+const SHIP_PATH_X_FREQ = 0.21;
+const SHIP_PATH_Y_FREQ = 0.34;
+const SHIP_PATH_X_FREQ_2 = 0.11;
+const SHIP_PATH_Y_FREQ_2 = 0.17;
+const SHIP_PATH_X_PHASE = 0.7;
+const SHIP_PATH_Y_PHASE = 1.4;
+
 // Comet → house impact. CometStreak writes here when it lands; HouseField
 // reads it and applies a radial impulse on the house particles so they
 // scatter and then spring back to their anchors (the "rebuild" mechanic).
@@ -140,7 +183,9 @@ const HOUSE_IMPULSE_STRENGTH = 26000;
 // House now lives in the TEXT canvas (orthographic pixel space) — same
 // coordinate system as the comet, so we can collide them directly. All
 // values in pixels (origin centered, y-up).
-const HOUSE_CENTER_X = 500;
+// X pushed further right so the comet's descent stays well clear of the
+// RichardTheBruce text region (right edge of the word sits ~ x=475).
+const HOUSE_CENTER_X = 600;
 const HOUSE_CENTER_Y = -300;
 const HOUSE_BODY_W = 90;
 const HOUSE_BODY_H = 68;
@@ -478,6 +523,53 @@ function sampleFlatEllipse(
     out[i * 3 + 0] = x * rx;
     out[i * 3 + 1] = (Math.random() - 0.5) * 0.012; // very thin
     out[i * 3 + 2] = z * rz;
+  }
+  return out;
+}
+
+// Disc with explicit thickness — for the alien saucer's flat body.
+function sampleDisc(
+  N: number,
+  rx: number,
+  rz: number,
+  thickness: number,
+): Float32Array {
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    let x = 0;
+    let z = 0;
+    let d2 = 2;
+    while (d2 > 1) {
+      x = Math.random() * 2 - 1;
+      z = Math.random() * 2 - 1;
+      d2 = x * x + z * z;
+    }
+    out[i * 3 + 0] = x * rx;
+    out[i * 3 + 1] = (Math.random() - 0.5) * thickness;
+    out[i * 3 + 2] = z * rz;
+  }
+  return out;
+}
+
+// Hemisphere (dome) — points on the upper half of a sphere. For the
+// saucer's cupola.
+function sampleDome(N: number, R: number): Float32Array {
+  const out = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    let d2 = 2;
+    while (d2 > 1) {
+      x = Math.random() * 2 - 1;
+      y = Math.random(); // upper hemisphere only (y in [0, 1])
+      z = Math.random() * 2 - 1;
+      d2 = x * x + y * y + z * z;
+    }
+    const bias = 0.85 + 0.15 * (1 - d2);
+    out[i * 3 + 0] = x * R * bias;
+    out[i * 3 + 1] = y * R * bias;
+    out[i * 3 + 2] = z * R * bias;
   }
   return out;
 }
@@ -900,6 +992,206 @@ function HouseField() {
   );
 }
 
+// ─────────── ALIEN SAUCER ───────────
+//
+// Flying saucer that zips around the viewport on a Lissajous-style path.
+// Three particle parts: flat disc body, glowing cyan dome on top, amber
+// running-lights underneath. Verlet physics with anchors that move with
+// the ship — particles spring after the saucer center so the body
+// wobbles slightly, just enough to feel alive.
+
+function AlienShipField() {
+  const { size } = useThree();
+  const aspect = size.width / Math.max(size.height, 1);
+  const fovRad = (CAM_FOV_DEG * Math.PI) / 180;
+  const halfH = CAM_Z * Math.tan(fovRad / 2);
+  const halfW = halfH * aspect;
+
+  // Build all part anchors as local offsets relative to the ship center.
+  const data = useMemo(() => {
+    const saucer = sampleDisc(
+      N_SHIP_SAUCER,
+      SHIP_SAUCER_RX,
+      SHIP_SAUCER_RZ,
+      SHIP_SAUCER_THICKNESS,
+    );
+    // Dome sits above the saucer (y is up in this canvas)
+    const dome = sampleDome(N_SHIP_DOME, SHIP_DOME_R);
+    for (let i = 0; i < N_SHIP_DOME; i++) {
+      dome[i * 3 + 1] += SHIP_SAUCER_THICKNESS / 2;
+    }
+    // Underbelly lights: row of small clusters along X, dropped below the
+    // disc by SHIP_BODY_DROP.
+    const lights = new Float32Array(N_SHIP_LIGHT_TOTAL * 3);
+    for (let l = 0; l < N_SHIP_LIGHTS; l++) {
+      const cx = (l - (N_SHIP_LIGHTS - 1) / 2) * SHIP_LIGHT_SPACING;
+      for (let p = 0; p < N_PER_SHIP_LIGHT; p++) {
+        const idx = (l * N_PER_SHIP_LIGHT + p) * 3;
+        // Random point inside a small sphere
+        let dx = 0;
+        let dy = 0;
+        let dz = 0;
+        let d2 = 2;
+        while (d2 > 1) {
+          dx = Math.random() * 2 - 1;
+          dy = Math.random() * 2 - 1;
+          dz = Math.random() * 2 - 1;
+          d2 = dx * dx + dy * dy + dz * dz;
+        }
+        lights[idx + 0] = cx + dx * SHIP_LIGHT_RADIUS;
+        lights[idx + 1] =
+          -SHIP_SAUCER_THICKNESS / 2 - SHIP_BODY_DROP +
+          dy * SHIP_LIGHT_RADIUS;
+        lights[idx + 2] = dz * SHIP_LIGHT_RADIUS * 0.3;
+      }
+    }
+    return { saucer, dome, lights };
+  }, []);
+
+  // Live position + previous (Verlet) per part. Initialized at anchor + a
+  // far-off-origin to start, so the ship slides in from somewhere
+  // off-screen.
+  const positionsByPart = useMemo(
+    () => ({
+      saucer: new Float32Array(data.saucer),
+      dome: new Float32Array(data.dome),
+      lights: new Float32Array(data.lights),
+    }),
+    [data],
+  );
+  const prevByPart = useMemo(
+    () => ({
+      saucer: new Float32Array(data.saucer),
+      dome: new Float32Array(data.dome),
+      lights: new Float32Array(data.lights),
+    }),
+    [data],
+  );
+
+  const saucerRef = useRef<THREE.InstancedMesh>(null);
+  const domeRef = useRef<THREE.InstancedMesh>(null);
+  const lightsRef = useRef<THREE.InstancedMesh>(null);
+
+  const tempObject = useMemo(() => new THREE.Object3D(), []);
+
+  // Smoothed ship center position.
+  const shipPos = useRef(new THREE.Vector2(0, 0));
+  const targetPos = useRef(new THREE.Vector2(0, 0));
+
+  useFrame((state, rawDt) => {
+    const dt = Math.min(rawDt, 0.05);
+    const t = state.clock.elapsedTime;
+
+    // Compute target position via Lissajous-superposition. Two sinusoids
+    // per axis at different frequencies + phase → complex non-repeating
+    // path that visits the whole viewport.
+    const tx =
+      (Math.cos(t * SHIP_PATH_X_FREQ + SHIP_PATH_X_PHASE) *
+        SHIP_PATH_X_AMP +
+        Math.sin(t * SHIP_PATH_X_FREQ_2) * SHIP_PATH_X_AMP * 0.4) *
+      halfW;
+    const ty =
+      (Math.sin(t * SHIP_PATH_Y_FREQ + SHIP_PATH_Y_PHASE) *
+        SHIP_PATH_Y_AMP +
+        Math.cos(t * SHIP_PATH_Y_FREQ_2) * SHIP_PATH_Y_AMP * 0.35) *
+      halfH;
+    targetPos.current.set(tx, ty);
+
+    // Smooth the ship's own position toward the target so the path is
+    // fluid even if we tune the formula later.
+    shipPos.current.lerp(targetPos.current, SHIP_CURSOR_LAG);
+
+    const sx = shipPos.current.x;
+    const sy = shipPos.current.y;
+
+    // ───── update each part: anchor = ship center + local offset ─────
+    const update = (
+      anchors: Float32Array,
+      positions: Float32Array,
+      prev: Float32Array,
+    ) => {
+      const N = anchors.length / 3;
+      for (let i = 0; i < N; i++) {
+        const ix = i * 3;
+        const ax = anchors[ix] + sx;
+        const ay = anchors[ix + 1] + sy;
+        const az = anchors[ix + 2];
+
+        const px = positions[ix];
+        const py = positions[ix + 1];
+        const pz = positions[ix + 2];
+
+        const ppx = prev[ix];
+        const ppy = prev[ix + 1];
+        const ppz = prev[ix + 2];
+
+        const fx = (ax - px) * SHIP_SPRING_K;
+        const fy = (ay - py) * SHIP_SPRING_K;
+        const fz = (az - pz) * SHIP_SPRING_K;
+
+        const vx = (px - ppx) * SHIP_DAMPING;
+        const vy = (py - ppy) * SHIP_DAMPING;
+        const vz = (pz - ppz) * SHIP_DAMPING;
+
+        prev[ix] = px;
+        prev[ix + 1] = py;
+        prev[ix + 2] = pz;
+        positions[ix] = px + vx + fx;
+        positions[ix + 1] = py + vy + fy;
+        positions[ix + 2] = pz + vz + fz;
+      }
+    };
+
+    update(data.saucer, positionsByPart.saucer, prevByPart.saucer);
+    update(data.dome, positionsByPart.dome, prevByPart.dome);
+    update(data.lights, positionsByPart.lights, prevByPart.lights);
+
+    // Push to InstancedMeshes.
+    const writeMesh = (
+      mesh: THREE.InstancedMesh | null,
+      positions: Float32Array,
+    ) => {
+      if (!mesh) return;
+      const N = positions.length / 3;
+      for (let i = 0; i < N; i++) {
+        tempObject.position.set(
+          positions[i * 3],
+          positions[i * 3 + 1],
+          positions[i * 3 + 2],
+        );
+        tempObject.scale.set(1, 1, 1);
+        tempObject.updateMatrix();
+        mesh.setMatrixAt(i, tempObject.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+
+    writeMesh(saucerRef.current, positionsByPart.saucer);
+    writeMesh(domeRef.current, positionsByPart.dome);
+    writeMesh(lightsRef.current, positionsByPart.lights);
+  });
+
+  return (
+    <>
+      <instancedMesh ref={saucerRef} args={[undefined, undefined, N_SHIP_SAUCER]}>
+        <sphereGeometry args={[SHIP_PARTICLE_RADIUS, 10, 10]} />
+        <meshBasicMaterial color={SHIP_SAUCER_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={domeRef} args={[undefined, undefined, N_SHIP_DOME]}>
+        <sphereGeometry args={[SHIP_PARTICLE_RADIUS, 10, 10]} />
+        <meshBasicMaterial color={SHIP_DOME_COLOR} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={lightsRef}
+        args={[undefined, undefined, N_SHIP_LIGHT_TOTAL]}
+      >
+        <sphereGeometry args={[SHIP_PARTICLE_RADIUS * 0.85, 10, 10]} />
+        <meshBasicMaterial color={SHIP_LIGHT_COLOR} toneMapped={false} />
+      </instancedMesh>
+    </>
+  );
+}
+
 // ─────────── SATURN canvas ───────────
 
 function SaturnField() {
@@ -1247,7 +1539,7 @@ const COMET_INTERVAL_MAX_S = 14;
 const COMET_FIRST_DELAY_S = 1.4;
 const COMET_HEAD_SIZE_PX = 18;
 const COMET_OFF_SCREEN = -99999;
-const COMET_ARC_HEIGHT_PX = 540;               // peak of the rainbow above the linear chord
+const COMET_ARC_HEIGHT_PX = 760;               // arch peak well above the text band
 // Comet lands at the END of "RichardTheBruce" — its right edge sits roughly
 // 0.66·halfW from screen center at FONT_SIZE_PX=140 on a 1440px viewport.
 const COMET_LANDING_X_FRAC = 0.66;
@@ -1883,6 +2175,7 @@ export function SaturnHome() {
         gl={{ alpha: true, antialias: true }}
       >
         <SaturnField />
+        <AlienShipField />
         <EffectComposer>
           <Bloom
             intensity={0.45}
