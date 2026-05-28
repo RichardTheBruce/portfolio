@@ -51,26 +51,36 @@ const RANGE_RING_START = RANGE_BODY_START + N_BODY;
 const RANGE_MOON_START = RANGE_RING_START + N_RING;
 
 // ────────── physics ──────────
-const ANCHOR_K = 0.11;
+const ANCHOR_K = 0.16;             // tighter spring → particles track moving moon/cursor closely
 const DAMPING = 0.86;
-const CURSOR_LAG = 0.18;
-const MIX_RATE = 0.7; // per second; reaches 1 in ~1.4s
+const CURSOR_LAG = 0.20;
+const MIX_RATE = 0.7;              // per second; reaches 1 in ~1.4s
 
 // Smash mechanic: click sends a radial impulse outward from cursor.
 // The impulse decays over IMPULSE_DURATION_S.
-const IMPULSE_RADIUS = 1.6;        // world units of effect
-const IMPULSE_STRENGTH = 0.22;     // peak push velocity per frame
+const IMPULSE_RADIUS = 1.0;        // world units of effect (scaled down with saturn)
+const IMPULSE_STRENGTH = 0.16;     // peak push velocity per frame
 const IMPULSE_DURATION_S = 0.32;   // total active time
 
 // ────────── visuals + world ──────────
 const CAM_Z = 5;
 const CAM_FOV_DEG = 50;
-const SATURN_BODY_R = 0.34;
-const RING_INNER_R = 0.52;
-const RING_OUTER_R = 1.05;
-const RING_TILT_DEG = 24;
-const MOON_RADII = [1.4, 1.85, 2.35, 2.9, 3.4];
-const MOON_BODY_R = 0.13;
+// Saturn scaled ~2.5x smaller than v8 — particles per body now heavily overlap,
+// reading as a solid mass rather than scattered dots.
+const SATURN_BODY_R = 0.135;
+const RING_INNER_R = 0.18;
+const RING_OUTER_R = 0.38;
+const RING_TILT_DEG = 22;
+// Moon orbital radii follow Saturn's real ratios (Mimas through Rhea):
+// 3.0x, 4.0x, 5.5x, 7.0x, 9.0x body radius. Tight, realistic, in-frame.
+const MOON_RADII = [
+  SATURN_BODY_R * 3.0,
+  SATURN_BODY_R * 4.0,
+  SATURN_BODY_R * 5.5,
+  SATURN_BODY_R * 7.0,
+  SATURN_BODY_R * 9.0,
+];
+const MOON_BODY_R = 0.042;
 const TEXT_FONT_PX = 170;
 const TEXT_WORLD_SCALE = 0.0045;
 const TEXT_CENTER_Y = 1.35;
@@ -78,10 +88,12 @@ const TEXT_Z_JITTER = 0.05;
 const WALL_Z_JITTER = 0.25;
 
 // per-mesh sphere geometry radii (baked into the geometry)
+// Body + moon dot sizes increased relative to v8 so heavy particle overlap
+// produces a near-solid surface read.
 const RADIUS_TEXT = 0.032;
-const RADIUS_BODY = 0.024;
-const RADIUS_RING = 0.020;
-const RADIUS_MOON = 0.028;
+const RADIUS_BODY = 0.026;
+const RADIUS_RING = 0.014;
+const RADIUS_MOON = 0.020;
 
 const COLOR_TEXT = "#C8C3B6"; // muted bone so text doesn't blow out under bloom
 const COLOR_BODY = "#F0A256"; // amber saturn
@@ -315,13 +327,18 @@ function MarqueeField() {
   const moonTilt = useRef<{ ct: number; st: number }[]>([]);
 
   useEffect(() => {
+    // True Kepler: ω ∝ r^-1.5. Inner moons orbit visibly faster than outer.
+    // All moons same direction (prograde — like real planetary systems).
+    // Slight phase spread so they don't all align at t=0.
+    const KEPLER_K = 0.30;
     for (let m = 0; m < N_MOONS; m++) {
-      moonAngles.current[m] = Math.random() * Math.PI * 2;
-      moonAngVel.current[m] = 0.55 / MOON_RADII[m];
-      if (Math.random() > 0.5) moonAngVel.current[m] *= -1;
+      moonAngles.current[m] = (m / N_MOONS) * Math.PI * 2 + Math.random() * 0.6;
+      moonAngVel.current[m] = KEPLER_K / Math.pow(MOON_RADII[m], 1.5);
     }
+    // Coplanar with mild inclination variance — looks like real moons,
+    // not chaotic.
     moonTilt.current = MOON_RADII.map(() => {
-      const t = (Math.random() - 0.5) * 0.55;
+      const t = (Math.random() - 0.5) * 0.16;
       return { ct: Math.cos(t), st: Math.sin(t) };
     });
   }, []);

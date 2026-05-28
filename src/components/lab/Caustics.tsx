@@ -22,42 +22,13 @@ import * as THREE from "three";
 
 const BG_COLOR = "#050608";
 
-// Stefan Gustavson simplex noise (the same 30-line GLSL we use in the
-// curl noise field). Public domain.
-const SIMPLEX = `
-vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
-float snoise(vec2 v) {
-  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
-                     -0.577350269189626, 0.024390243902439);
-  vec2 i  = floor(v + dot(v, C.yy));
-  vec2 x0 = v -   i + dot(i, C.xx);
-  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  vec4 x12 = x0.xyxy + C.xxzz;
-  x12.xy -= i1;
-  i = mod289(i);
-  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
-                  + i.x + vec3(0.0, i1.x, 1.0));
-  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-  m = m*m; m = m*m;
-  vec3 x = 2.0 * fract(p * C.www) - 1.0;
-  vec3 h = abs(x) - 0.5;
-  vec3 ox = floor(x + 0.5);
-  vec3 a0 = x - ox;
-  m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
-  vec3 g;
-  g.x  = a0.x  * x0.x  + h.x  * x0.y;
-  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-  return 130.0 * dot(m, g);
-}
-`;
-
 const VERT = `
 varying vec2 vUv;
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  // Fullscreen-quad trick: plane vertices are at [-1, 1], assign directly
+  // to clip space. No matrix multiplies, camera-independent.
+  gl_Position = vec4(position.xy, 0.0, 1.0);
 }
 `;
 
@@ -68,49 +39,45 @@ uniform float uTime;
 uniform vec2 uMouse;       // -1..1 NDC space
 uniform vec2 uResolution;
 
-${SIMPLEX}
-
-// Two-octave moving noise. The gradient of this gives the "light beam"
-// direction. Caustics are where the gradient is small but the second
-// derivative is large — we approximate by taking |grad|^2 and inverting.
-float field(vec2 p) {
-  float n1 = snoise(p * 1.4 + vec2(uTime * 0.10, uTime * 0.07));
-  float n2 = snoise(p * 2.8 - vec2(uTime * 0.13, uTime * 0.09)) * 0.5;
-  return n1 + n2;
+// Classic Julia-turbulence caustic. Iteratively warp a coordinate by
+// sinusoids of itself; the resulting interference pattern produces the
+// bright filamentary lines you see at the bottom of a pool. Powering
+// the output sharpens the lines.
+float caustic(vec2 uv, float t) {
+  vec2 p = uv;
+  for (int i = 1; i < 5; i++) {
+    float fi = float(i);
+    p.x += 0.55 / fi * sin(fi * p.y * 2.0 + t * 0.45 + 0.3 * fi);
+    p.y += 0.55 / fi * cos(fi * p.x * 2.0 + t * 0.45 + 0.4 * fi);
+  }
+  float v = sin(p.x * 2.2 + p.y * 1.8) * 0.5 + 0.5;
+  return pow(v, 5.0);
 }
 
 void main() {
-  // World UV centered at zero, aspect-corrected.
-  vec2 uv = (vUv - 0.5);
+  // Aspect-corrected world UV in [-1, 1] for the shorter axis.
+  vec2 uv = vUv * 2.0 - 1.0;
   uv.x *= uResolution.x / uResolution.y;
 
-  // Mouse pulls the field toward it: shift sample by mouse position.
-  vec2 mouseWarp = uMouse * 0.5;
-  vec2 p = uv * 2.0 + mouseWarp;
+  // Mouse pulls the field toward it.
+  vec2 p = uv * 2.4 + uMouse * 0.8;
 
-  // Sample field + tiny offsets to approximate gradient.
-  float e = 0.012;
-  float f  = field(p);
-  float fx = field(p + vec2(e, 0.0));
-  float fy = field(p + vec2(0.0, e));
-  vec2  g  = vec2(fx - f, fy - f) / e;
+  float c = caustic(p, uTime);
 
-  // Caustic strength: sharp falloff around where |grad| is small.
-  float mag = length(g);
-  float caustic = pow(1.0 / (1.0 + mag * mag * 1.8), 2.4);
+  // 3-stop palette: deep navy → amber → bone.
+  vec3 colDeep  = vec3(0.030, 0.055, 0.090);
+  vec3 colAmber = vec3(0.788, 0.490, 0.243);
+  vec3 colBone  = vec3(0.961, 0.949, 0.925);
 
-  // Color: gradient through the brand palette.
-  // Lower energy = deep navy, mid = amber, high = bone.
-  vec3 colDeep   = vec3(0.040, 0.060, 0.080);
-  vec3 colAmber  = vec3(0.788, 0.490, 0.243);
-  vec3 colBone   = vec3(0.961, 0.949, 0.925);
-
-  vec3 col = mix(colDeep, colAmber, smoothstep(0.10, 0.55, caustic));
-  col = mix(col, colBone, smoothstep(0.65, 1.05, caustic));
+  // Base water tint (gentle gradient over the field) then bright filaments.
+  float baseTint = caustic(p * 0.45, uTime * 0.6);
+  vec3 col = mix(colDeep, colAmber * 0.55, baseTint);
+  col = mix(col, colAmber, smoothstep(0.10, 0.55, c));
+  col = mix(col, colBone,  smoothstep(0.55, 0.95, c));
 
   // Subtle radial vignette so the edges don't pop.
-  float vig = smoothstep(1.05, 0.35, length(uv));
-  col *= mix(0.85, 1.0, vig);
+  float vig = smoothstep(1.5, 0.4, length(uv));
+  col *= mix(0.78, 1.0, vig);
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -173,17 +140,15 @@ export function Caustics({
   return (
     <section className="relative h-screen w-full overflow-hidden border-b border-bone/5 bg-ink">
       <Canvas
-        orthographic
-        camera={{ position: [0, 0, 1], zoom: 1 }}
         style={{ position: "absolute", inset: 0 }}
-        gl={{ alpha: false, antialias: true }}
+        gl={{ alpha: false, antialias: false }}
       >
         <color attach="background" args={[BG_COLOR]} />
         <CausticPlane />
         <EffectComposer>
           <Bloom
-            intensity={0.6}
-            luminanceThreshold={0.55}
+            intensity={0.4}
+            luminanceThreshold={0.7}
             luminanceSmoothing={0.5}
             mipmapBlur
           />
