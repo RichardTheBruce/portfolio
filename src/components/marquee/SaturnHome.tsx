@@ -674,13 +674,18 @@ function SaturnField() {
 const COMET_TAIL_LENGTH = 48;
 const COMET_TAIL_HEAD_SIZE_PX = 14;
 const COMET_TAIL_END_SIZE_PX = 2;
-const COMET_FLIGHT_DURATION_S = 2.0;          // a bit slower for the arc
+const COMET_FLIGHT_DURATION_S = 2.4;          // longer flight for the bigger arc
 const COMET_INTERVAL_MIN_S = 7;
 const COMET_INTERVAL_MAX_S = 14;
 const COMET_FIRST_DELAY_S = 1.4;
 const COMET_HEAD_SIZE_PX = 18;
 const COMET_OFF_SCREEN = -99999;
-const COMET_ARC_HEIGHT_PX = 360;               // peak of the rainbow above the linear chord
+const COMET_ARC_HEIGHT_PX = 540;               // peak of the rainbow above the linear chord
+// Comet lands at the END of "RichardTheBruce" — its right edge sits roughly
+// 0.66·halfW from screen center at FONT_SIZE_PX=140 on a 1440px viewport.
+const COMET_LANDING_X_FRAC = 0.66;
+const COMET_LANDING_Y_PX = -100;               // baseline of the letters in canvas y-up
+const COMET_START_X_MARGIN = 220;              // how far off-screen left we launch
 
 // Explosion: radial burst at landing point.
 const EXPLOSION_PARTICLE_COUNT = 64;
@@ -776,24 +781,13 @@ function CometStreak() {
     // ───── spawn? ─────
     if (f.phase === "idle" && now >= f.nextSpawnAt) {
       const halfW = size.width / 2;
-      const margin = 80;
-      // Choose entry side: rainbow can curve from either side. Default
-      // left → right; flip with 50% chance for variety.
-      const goingRight = Math.random() > 0.5;
-      // Landing point is comfortably within the viewport so the
-      // explosion is fully visible. Y near the lower edge of the text
-      // band so it looks like "lands at the horizon".
-      const landY = -160 - Math.random() * 80; // -160..-240
-      const launchY = -120 - Math.random() * 60; // -120..-180
-      if (goingRight) {
-        f.startX = -halfW - margin;
-        f.endX = halfW * 0.25 + Math.random() * halfW * 0.5; // right-center
-      } else {
-        f.startX = halfW + margin;
-        f.endX = -halfW * 0.25 - Math.random() * halfW * 0.5; // left-center
-      }
-      f.startY = launchY;
-      f.endY = landY;
+      // Always launch from far off-screen left so the arc spans a long
+      // distance, peaks well above the text, then lands at the right end
+      // of "RichardTheBruce" with a satisfying burst.
+      f.startX = -halfW - COMET_START_X_MARGIN;
+      f.startY = COMET_LANDING_Y_PX + (Math.random() - 0.5) * 20; // tiny jitter
+      f.endX = halfW * COMET_LANDING_X_FRAC + (Math.random() - 0.5) * 30;
+      f.endY = COMET_LANDING_Y_PX + (Math.random() - 0.5) * 20;
 
       // Prime tail with the start position so the trail doesn't render
       // a line from the previous flight's last frame.
