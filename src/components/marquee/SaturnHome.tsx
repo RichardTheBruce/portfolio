@@ -1264,6 +1264,84 @@ export function SaturnHome() {
 
 
 
+      {/* Tiny house on a glass platform in the bottom-right corner. A cozy
+          counterweight to the Saturn cursor floating around the rest of
+          the screen. Smaller than the Saturn body so it doesn't compete. */}
+      <div
+        className="pointer-events-none absolute bottom-6 right-6 z-[6]"
+        aria-hidden
+      >
+        <svg width="52" height="46" viewBox="0 0 52 46" fill="none">
+          {/* Glass plinth — translucent oval base with a soft string-blue tint */}
+          <ellipse
+            cx="26"
+            cy="42"
+            rx="24"
+            ry="2.6"
+            fill="#3DA9FC"
+            fillOpacity="0.16"
+          />
+          <ellipse
+            cx="26"
+            cy="42"
+            rx="24"
+            ry="2.6"
+            stroke="#3DA9FC"
+            strokeOpacity="0.32"
+            strokeWidth="0.6"
+          />
+          {/* Roof */}
+          <polygon
+            points="7,22 26,9 45,22"
+            fill="#C97D3E"
+            stroke="#7A4A2E"
+            strokeWidth="0.7"
+          />
+          {/* Chimney (drawn behind the front of the roof so it pokes out) */}
+          <rect x="33" y="11" width="3.6" height="7.2" fill="#7A6F5E" />
+          {/* House body */}
+          <rect
+            x="11"
+            y="22"
+            width="30"
+            height="17"
+            fill="#F5F2EC"
+            fillOpacity="0.9"
+            stroke="#7A6F5E"
+            strokeWidth="0.7"
+          />
+          {/* Door */}
+          <rect x="22" y="28" width="7" height="11" fill="#7A4A2E" />
+          <circle cx="27.6" cy="33.5" r="0.45" fill="#E2B071" />
+          {/* Windows */}
+          <rect
+            x="14.5"
+            y="25.5"
+            width="5"
+            height="4.5"
+            fill="#3DA9FC"
+            fillOpacity="0.55"
+            stroke="#7A6F5E"
+            strokeWidth="0.4"
+          />
+          <rect
+            x="32.5"
+            y="25.5"
+            width="5"
+            height="4.5"
+            fill="#3DA9FC"
+            fillOpacity="0.55"
+            stroke="#7A6F5E"
+            strokeWidth="0.4"
+          />
+          {/* Window mullions */}
+          <line x1="17" y1="25.5" x2="17" y2="30" stroke="#7A6F5E" strokeWidth="0.3" />
+          <line x1="35" y1="25.5" x2="35" y2="30" stroke="#7A6F5E" strokeWidth="0.3" />
+          <line x1="14.5" y1="27.75" x2="19.5" y2="27.75" stroke="#7A6F5E" strokeWidth="0.3" />
+          <line x1="32.5" y1="27.75" x2="37.5" y2="27.75" stroke="#7A6F5E" strokeWidth="0.3" />
+        </svg>
+      </div>
+
       {/* Saturn canvas: perspective world space, transparent so text shows
           underneath. */}
       <Canvas
