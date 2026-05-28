@@ -14,6 +14,7 @@
 //   09. Bloom + N8AO + chromatic aberration combo
 //   10. Glitch / scan-line burst
 
+import { Caustics } from "@/components/lab/Caustics";
 import { CurlNoiseField } from "@/components/lab/CurlNoiseField";
 import { GalaxySpiral } from "@/components/lab/GalaxySpiral";
 import { GlitchBurst } from "@/components/lab/GlitchBurst";
@@ -95,6 +96,11 @@ export default function LabPage() {
         index="Experiment 13"
         title="Scroll-driven path draw — vector traversal"
         meta="section is 300vh tall · sticky-pinned SVG curve · GSAP ScrollTrigger drives stroke-dashoffset (path draws as you scroll) AND MotionPathPlugin (a glowing dot rides the path) · trail dot lags at scrub=1.6 for a streak · scrub values are tuned through Lenis-smoothed scroll so the whole choreography feels glassy"
+      />
+      <Caustics
+        index="Experiment 14"
+        title="Underwater caustic light field"
+        meta="fullscreen fragment shader · two-octave moving Gustavson snoise (drifts at 0.10 + 0.13 units/s, opposite directions for shear) · gradient ∇f estimated via central differences (ε=0.012) · caustic = 1/(1+|∇f|²·1.8)^2.4 · 3-stop palette: deep navy → amber → bone · cursor warps sample coords toward it (0.5x) so the light source migrates with you · vignette + Bloom for the underwater bias"
       />
     </main>
   );
