@@ -248,7 +248,11 @@ function HeatmapField({
           <points
             key={tier}
             ref={(el) => {
-              pointsRefs.current[tier] = el;
+              // R3F's <points> emits a Points<NormalOrGLBufferAttributes>;
+              // we keep our array as the narrower THREE.Points type so the
+              // useFrame loop can talk to .geometry.attributes.position
+              // without the union dance. Safe — we never touch GL-only attrs.
+              pointsRefs.current[tier] = el as unknown as THREE.Points | null;
             }}
             material={materials[tier]}
           >
