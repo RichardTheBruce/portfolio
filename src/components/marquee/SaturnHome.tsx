@@ -655,6 +655,278 @@ function SaturnField() {
   );
 }
 
+// ─────────── shooting star comet ───────────
+//
+// A bright head + a fading line-strip tail that streaks left → right
+// across the viewport, passing over the RichardTheBruce text. The tail
+// is a 32-vertex polyline whose positions get shifted each frame (slot
+// 0 = current head, slot N = oldest). Per-vertex color fades from
+// near-white at the head to pure black at the tail end, so against the
+// ink background the streak naturally dissolves.
+//
+// A separate single-vertex Points object sits at the head with a much
+// bigger gl_PointSize so the bloom pass blooms it into a glowing comet
+// nucleus. Between flights the head parks off-screen so nothing renders.
+// Next flight is scheduled 7–14s later (randomized).
+
+// Tail = chunky overlapping points so Bloom catches the streak. A pure 1px
+// LineBasicMaterial is too thin for the post-fx to grab.
+const COMET_TAIL_LENGTH = 48;
+const COMET_TAIL_HEAD_SIZE_PX = 14;
+const COMET_TAIL_END_SIZE_PX = 2;
+const COMET_FLIGHT_DURATION_S = 1.6;
+const COMET_INTERVAL_MIN_S = 7;
+const COMET_INTERVAL_MAX_S = 14;
+const COMET_FIRST_DELAY_S = 1.4;
+const COMET_HEAD_SIZE_PX = 18;
+const COMET_OFF_SCREEN = -99999;
+
+function CometStreak() {
+  const { size } = useThree();
+
+  // Persistent buffers. The Z coordinate of each tail vertex stores its
+  // index in the trail (0 = head, COMET_TAIL_LENGTH-1 = tail end) so the
+  // shader can derive size and alpha without a separate attribute.
+  const tailPositions = useMemo(() => {
+    const out = new Float32Array(COMET_TAIL_LENGTH * 3);
+    for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
+      out[i * 3 + 2] = i; // stash index in z
+    }
+    return out;
+  }, []);
+
+  const headPosition = useMemo(() => new Float32Array([0, 0, 0]), []);
+
+  const tailRef = useRef<THREE.Points>(null);
+  const headRef = useRef<THREE.Points>(null);
+
+  // Flight state. ?comet=freeze pins a comet at mid-flight for screenshot
+  // verification; ?comet=loop fires comets every 2s back-to-back.
+  const debugMode =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("comet")
+      : null;
+  const flight = useRef({
+    activeStart: -1, // sentinel = no active flight
+    nextSpawnAt:
+      debugMode === "loop" || debugMode === "freeze"
+        ? 0.2
+        : COMET_FIRST_DELAY_S,
+    startX: 0,
+    startY: 0,
+    endX: 0,
+    endY: 0,
+  });
+
+  // Park everything off-screen on mount so we don't render a stale
+  // origin-point before the first flight.
+  useEffect(() => {
+    for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
+      tailPositions[i * 3 + 0] = COMET_OFF_SCREEN;
+      tailPositions[i * 3 + 1] = COMET_OFF_SCREEN;
+    }
+    headPosition[0] = COMET_OFF_SCREEN;
+    headPosition[1] = COMET_OFF_SCREEN;
+    if (tailRef.current) {
+      (
+        tailRef.current.geometry.attributes
+          .position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+    if (headRef.current) {
+      (
+        headRef.current.geometry.attributes
+          .position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+  }, [tailPositions, headPosition]);
+
+  useFrame((state) => {
+    const now = state.clock.elapsedTime;
+    const f = flight.current;
+
+    // Need to spawn?
+    if (f.activeStart < 0 && now >= f.nextSpawnAt) {
+      f.activeStart = now;
+      // Path: enters from off-screen left, exits off-screen right.
+      // Y in the band that crosses RichardTheBruce (which sits roughly
+      // y=-110..+40 in pixel coords with TEXT_VERTICAL_OFFSET_PX=-40).
+      // Add a downward slope so it feels like a falling star.
+      const margin = 140;
+      const halfW = size.width / 2;
+      const yBand = (Math.random() - 0.5) * 160; // -80..+80 — over the text
+      f.startX = -halfW - margin;
+      f.startY = yBand + (Math.random() * 80 + 30); // upper entry
+      f.endX = halfW + margin;
+      f.endY = yBand - (Math.random() * 100 + 40); // lower exit
+      // Reset tail to the start point so the line doesn't "snap" from old data
+      for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
+        tailPositions[i * 3 + 0] = f.startX;
+        tailPositions[i * 3 + 1] = f.startY;
+      }
+    }
+
+    // Active flight?
+    if (f.activeStart >= 0) {
+      const rawFlightT = (now - f.activeStart) / COMET_FLIGHT_DURATION_S;
+      const flightT = debugMode === "freeze" ? 0.5 : rawFlightT;
+
+      if (flightT >= 1) {
+        // Done. Park, schedule next.
+        f.activeStart = -1;
+        f.nextSpawnAt =
+          debugMode === "loop"
+            ? now + 0.05
+            : now +
+              COMET_INTERVAL_MIN_S +
+              Math.random() * (COMET_INTERVAL_MAX_S - COMET_INTERVAL_MIN_S);
+        for (let i = 0; i < COMET_TAIL_LENGTH; i++) {
+          tailPositions[i * 3 + 0] = COMET_OFF_SCREEN;
+          tailPositions[i * 3 + 1] = COMET_OFF_SCREEN;
+        }
+        headPosition[0] = COMET_OFF_SCREEN;
+        headPosition[1] = COMET_OFF_SCREEN;
+      } else {
+        // Eased path so the comet decelerates slightly at the right edge.
+        const eased = flightT * (2 - flightT); // ease-out quadratic
+        const headX = f.startX + (f.endX - f.startX) * eased;
+        const headY = f.startY + (f.endY - f.startY) * eased;
+
+        // Shift tail history (newest goes to slot 0).
+        for (let i = COMET_TAIL_LENGTH - 1; i > 0; i--) {
+          tailPositions[i * 3 + 0] = tailPositions[(i - 1) * 3 + 0];
+          tailPositions[i * 3 + 1] = tailPositions[(i - 1) * 3 + 1];
+        }
+        tailPositions[0] = headX;
+        tailPositions[1] = headY;
+
+        headPosition[0] = headX;
+        headPosition[1] = headY;
+      }
+    }
+
+    if (tailRef.current) {
+      (
+        tailRef.current.geometry.attributes
+          .position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+    if (headRef.current) {
+      (
+        headRef.current.geometry.attributes
+          .position as THREE.BufferAttribute
+      ).needsUpdate = true;
+    }
+  });
+
+  const tailMaterial = useMemo(() => {
+    const dpr =
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    return new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        uniform float uTailLength;
+        uniform float uHeadSize;
+        uniform float uTailEndSize;
+        varying float vAlpha;
+        void main() {
+          // position.z carries the index (0..uTailLength-1). x,y is the
+          // animated trail position.
+          float idx = position.z;
+          float t = idx / max(uTailLength - 1.0, 1.0); // 0 at head, 1 at tail
+          vAlpha = pow(1.0 - t, 1.5);
+          float size = mix(uHeadSize, uTailEndSize, t);
+          gl_PointSize = size;
+          // Render at z=0 in clip space — the z value is just a smuggled index.
+          vec4 mv = modelViewMatrix * vec4(position.xy, 0.0, 1.0);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying float vAlpha;
+        void main() {
+          vec2 c = gl_PointCoord - vec2(0.5);
+          float d = length(c);
+          if (d > 0.5) discard;
+          float radial = smoothstep(0.5, 0.0, d);
+          // Warm-white comet light, slightly biased toward the blue end at
+          // the head (typical comet spectrum: hot blue dust + ion tail).
+          vec3 col = vec3(0.98, 0.96, 0.88);
+          gl_FragColor = vec4(col * vAlpha, vAlpha * radial);
+        }
+      `,
+      uniforms: {
+        uTailLength: { value: COMET_TAIL_LENGTH },
+        uHeadSize: { value: COMET_TAIL_HEAD_SIZE_PX * dpr },
+        uTailEndSize: { value: COMET_TAIL_END_SIZE_PX * dpr },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+  }, []);
+
+  const headMaterial = useMemo(() => {
+    const dpr =
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    return new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        uniform float uPointSize;
+        void main() {
+          gl_PointSize = uPointSize;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        void main() {
+          vec2 c = gl_PointCoord - vec2(0.5);
+          float d = length(c);
+          if (d > 0.5) discard;
+          // Hot core + soft halo
+          float core = smoothstep(0.5, 0.0, d);
+          float halo = smoothstep(0.5, 0.15, d) * 0.6;
+          float a = max(core, halo);
+          // Cool blue-white core to warm yellow at the very center
+          vec3 col = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 0.95, 0.78), core);
+          gl_FragColor = vec4(col, a);
+        }
+      `,
+      uniforms: {
+        uPointSize: { value: COMET_HEAD_SIZE_PX * dpr },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+  }, []);
+
+  return (
+    <>
+      {/* Streaking tail: a 48-point trail where each point has size + alpha
+          driven by its index in the buffer (0 = head, brightest + biggest;
+          47 = tail end, dimmest + smallest). Additive blending plus Bloom
+          turns the overlapping circles into a continuous glowing streak. */}
+      <points ref={tailRef} material={tailMaterial}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[tailPositions, 3]}
+          />
+        </bufferGeometry>
+      </points>
+
+      {/* Bright comet nucleus that picks up the heaviest bloom */}
+      <points ref={headRef} material={headMaterial}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[headPosition, 3]}
+          />
+        </bufferGeometry>
+      </points>
+    </>
+  );
+}
+
 // ─────────── magnet subheader (Exp 15 mechanic) ───────────
 
 const MAGNET_WORDS = ["He", "Who", "Creates"];
@@ -811,6 +1083,7 @@ export function SaturnHome() {
         >
           <ScreenPixelCamera />
           <TextField anchors={anchors} />
+          <CometStreak />
           <EffectComposer>
             <Bloom
               intensity={1.0}
