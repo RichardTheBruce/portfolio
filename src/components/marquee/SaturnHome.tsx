@@ -263,119 +263,68 @@ function sampleBox(N: number, w: number, h: number, d: number): Float32Array {
   return out;
 }
 
-// Box WIREFRAME — particles distributed along the 12 edges of the cube,
-// weighted by length. Reads as a drawn-outline cube even at low density.
-function sampleBoxWireframe(
-  N: number,
-  w: number,
-  h: number,
-  d: number,
-): Float32Array {
-  // 12 edges. Each: start point + axis (0/1/2) + length.
-  const edges: { sx: number; sy: number; sz: number; axis: 0 | 1 | 2; len: number }[] = [];
-  for (const y of [h / 2, -h / 2]) {
-    for (const z of [d / 2, -d / 2]) {
-      edges.push({ sx: -w / 2, sy: y, sz: z, axis: 0, len: w });
-    }
-  }
-  for (const x of [w / 2, -w / 2]) {
-    for (const z of [d / 2, -d / 2]) {
-      edges.push({ sx: x, sy: -h / 2, sz: z, axis: 1, len: h });
-    }
-  }
-  for (const x of [w / 2, -w / 2]) {
-    for (const y of [h / 2, -h / 2]) {
-      edges.push({ sx: x, sy: y, sz: -d / 2, axis: 2, len: d });
-    }
-  }
-  let total = 0;
-  for (const e of edges) total += e.len;
-
+// 2D RECTANGLE outline (XY plane) — particles along 4 edges. Reads as a
+// clean drawn rectangle from the front. Tiny perpendicular jitter so the
+// line has the same chunky particle character as the moons.
+function sampleRectOutline(N: number, w: number, h: number): Float32Array {
   const out = new Float32Array(N * 3);
+  // 4 edges weighted by length: top, bottom, left, right
+  const lenTop = w;
+  const lenBot = w;
+  const lenL = h;
+  const lenR = h;
+  const total = lenTop + lenBot + lenL + lenR;
   for (let i = 0; i < N; i++) {
-    let r = Math.random() * total;
-    let edge = edges[0];
-    for (const e of edges) {
-      r -= e.len;
-      if (r <= 0) {
-        edge = e;
-        break;
-      }
-    }
+    const r = Math.random() * total;
     const t = Math.random();
-    let x = edge.sx;
-    let y = edge.sy;
-    let z = edge.sz;
-    if (edge.axis === 0) x += t * edge.len;
-    else if (edge.axis === 1) y += t * edge.len;
-    else z += t * edge.len;
-    // Tiny jitter perpendicular to the edge so it reads as a chunky line
-    // rather than a pixel-perfect rod.
-    const jit = HOUSE_PARTICLE_RADIUS * 0.6;
+    const jit = HOUSE_PARTICLE_RADIUS * 0.7;
+    let x = 0;
+    let y = 0;
+    if (r < lenTop) {
+      x = -w / 2 + t * w;
+      y = h / 2;
+    } else if (r < lenTop + lenBot) {
+      x = -w / 2 + t * w;
+      y = -h / 2;
+    } else if (r < lenTop + lenBot + lenL) {
+      x = -w / 2;
+      y = -h / 2 + t * h;
+    } else {
+      x = w / 2;
+      y = -h / 2 + t * h;
+    }
     out[i * 3 + 0] = x + (Math.random() - 0.5) * jit;
     out[i * 3 + 1] = y + (Math.random() - 0.5) * jit;
-    out[i * 3 + 2] = z + (Math.random() - 0.5) * jit;
+    out[i * 3 + 2] = (Math.random() - 0.5) * jit;
   }
   return out;
 }
 
-// Roof WIREFRAME — the visible edges of a triangular prism (top ridge +
-// 4 slant edges along the gables + 2 base edges along Z). Bottom triangle
-// edges (where the roof sits on the body) are omitted.
-function sampleRoofWireframe(
+// 2D TRIANGLE outline (top-pointing, XY plane) — left slant + right slant
+// only. Bottom edge is skipped because it overlaps the body's top edge.
+function sampleTriangleOutline(
   N: number,
   baseW: number,
   height: number,
-  depth: number,
 ): Float32Array {
-  const slantLen = Math.sqrt((baseW / 2) * (baseW / 2) + height * height);
-  type Edge = {
-    sx: number;
-    sy: number;
-    sz: number;
-    ex: number;
-    ey: number;
-    ez: number;
-    len: number;
-  };
-  const edges: Edge[] = [
-    // Top ridge (along Z, at apex)
-    { sx: 0, sy: height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: depth },
-    // Bottom-left ridge (along Z, at base-left)
-    { sx: -baseW / 2, sy: -height / 2, sz: -depth / 2, ex: -baseW / 2, ey: -height / 2, ez: depth / 2, len: depth },
-    // Bottom-right ridge (along Z, at base-right)
-    { sx: baseW / 2, sy: -height / 2, sz: -depth / 2, ex: baseW / 2, ey: -height / 2, ez: depth / 2, len: depth },
-    // Front gable left slant
-    { sx: -baseW / 2, sy: -height / 2, sz: depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: slantLen },
-    // Front gable right slant
-    { sx: baseW / 2, sy: -height / 2, sz: depth / 2, ex: 0, ey: height / 2, ez: depth / 2, len: slantLen },
-    // Back gable left slant
-    { sx: -baseW / 2, sy: -height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: -depth / 2, len: slantLen },
-    // Back gable right slant
-    { sx: baseW / 2, sy: -height / 2, sz: -depth / 2, ex: 0, ey: height / 2, ez: -depth / 2, len: slantLen },
-  ];
-  let total = 0;
-  for (const e of edges) total += e.len;
-
   const out = new Float32Array(N * 3);
+  // 2 slant edges, equal length
   for (let i = 0; i < N; i++) {
-    let r = Math.random() * total;
-    let edge = edges[0];
-    for (const e of edges) {
-      r -= e.len;
-      if (r <= 0) {
-        edge = e;
-        break;
-      }
-    }
     const t = Math.random();
-    const jit = HOUSE_PARTICLE_RADIUS * 0.6;
-    out[i * 3 + 0] =
-      edge.sx + (edge.ex - edge.sx) * t + (Math.random() - 0.5) * jit;
-    out[i * 3 + 1] =
-      edge.sy + (edge.ey - edge.sy) * t + (Math.random() - 0.5) * jit;
-    out[i * 3 + 2] =
-      edge.sz + (edge.ez - edge.sz) * t + (Math.random() - 0.5) * jit;
+    const jit = HOUSE_PARTICLE_RADIUS * 0.7;
+    const goingRight = Math.random() < 0.5;
+    let x: number;
+    if (goingRight) {
+      // From left base (-baseW/2, -h/2) to apex (0, +h/2)
+      x = -baseW / 2 + (baseW / 2) * t;
+    } else {
+      // From right base (+baseW/2, -h/2) to apex (0, +h/2)
+      x = baseW / 2 - (baseW / 2) * t;
+    }
+    const y = -height / 2 + height * t;
+    out[i * 3 + 0] = x + (Math.random() - 0.5) * jit;
+    out[i * 3 + 1] = y + (Math.random() - 0.5) * jit;
+    out[i * 3 + 2] = (Math.random() - 0.5) * jit;
   }
   return out;
 }
@@ -678,41 +627,27 @@ function HouseParticles() {
   // sampling — they're small enough to read as solid panels anyway.
   const parts = useMemo(() => {
     return {
-      body: sampleBoxWireframe(
-        N_HOUSE_BODY,
-        HOUSE_BODY_W,
-        HOUSE_BODY_H,
-        HOUSE_BODY_D,
-      ),
-      roof: sampleRoofWireframe(
+      body: sampleRectOutline(N_HOUSE_BODY, HOUSE_BODY_W, HOUSE_BODY_H),
+      roof: sampleTriangleOutline(
         N_HOUSE_ROOF,
         HOUSE_ROOF_W,
         HOUSE_ROOF_H,
-        HOUSE_ROOF_D,
       ),
-      chimney: sampleBoxWireframe(
+      chimney: sampleRectOutline(
         N_HOUSE_CHIMNEY,
         HOUSE_CHIMNEY_W,
         HOUSE_CHIMNEY_H,
-        HOUSE_CHIMNEY_D,
       ),
-      door: sampleBox(
-        N_HOUSE_DOOR,
-        HOUSE_DOOR_W,
-        HOUSE_DOOR_H,
-        HOUSE_DOOR_D,
-      ),
-      windowLeft: sampleBox(
+      door: sampleRectOutline(N_HOUSE_DOOR, HOUSE_DOOR_W, HOUSE_DOOR_H),
+      windowLeft: sampleRectOutline(
         N_HOUSE_WINDOW,
         HOUSE_WINDOW_W,
         HOUSE_WINDOW_H,
-        HOUSE_WINDOW_D,
       ),
-      windowRight: sampleBox(
+      windowRight: sampleRectOutline(
         N_HOUSE_WINDOW,
         HOUSE_WINDOW_W,
         HOUSE_WINDOW_H,
-        HOUSE_WINDOW_D,
       ),
       plinth: sampleFlatEllipse(
         N_HOUSE_PLINTH,
@@ -756,36 +691,38 @@ function HouseParticles() {
       mesh.instanceMatrix.needsUpdate = true;
     };
 
-    // Body sits at the center (offsetY 0). Door pokes out toward camera.
+    // 2D house — everything in the XY plane at z ≈ 0. Small z stagger
+    // (a few thousandths of a world unit) on the small parts so the
+    // additive bloom layers cleanly without z-fighting.
     write(bodyRef.current, parts.body, 0, 0, 0);
     write(roofRef.current, parts.roof, 0, HOUSE_BODY_H / 2 + HOUSE_ROOF_H / 2, 0);
     write(
       chimneyRef.current,
       parts.chimney,
       HOUSE_BODY_W * 0.22,
-      HOUSE_BODY_H / 2 + HOUSE_ROOF_H * 0.45 + HOUSE_CHIMNEY_H / 2,
-      0,
+      HOUSE_BODY_H / 2 + HOUSE_ROOF_H * 0.55 + HOUSE_CHIMNEY_H / 2,
+      0.003,
     );
     write(
       doorRef.current,
       parts.door,
       0,
       -HOUSE_BODY_H / 2 + HOUSE_DOOR_H / 2,
-      HOUSE_BODY_D / 2 + HOUSE_DOOR_D / 2 - 0.002,
+      0.005,
     );
     write(
       windowLeftRef.current,
       parts.windowLeft,
       -HOUSE_BODY_W * 0.28,
       HOUSE_BODY_H * 0.12,
-      HOUSE_BODY_D / 2 + HOUSE_WINDOW_D / 2 - 0.002,
+      0.005,
     );
     write(
       windowRightRef.current,
       parts.windowRight,
       HOUSE_BODY_W * 0.28,
       HOUSE_BODY_H * 0.12,
-      HOUSE_BODY_D / 2 + HOUSE_WINDOW_D / 2 - 0.002,
+      0.005,
     );
     write(
       plinthRef.current,
