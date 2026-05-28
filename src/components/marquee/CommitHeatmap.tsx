@@ -271,17 +271,29 @@ function HeatmapField({
 
 // ───────── public component ─────────
 
-export function CommitHeatmap() {
+interface CommitHeatmapProps {
+  // Optional: real GitHub-fetched commit data passed from a Server
+  // Component. When present, the heatmap uses these instead of the
+  // seeded synthetic distribution. Falls back to synthetic when the
+  // GitHub fetch fails or GITHUB_TOKEN isn't configured.
+  realCommits?: { total: number; dailyCommits: number[] } | null;
+}
+
+export function CommitHeatmap({ realCommits }: CommitHeatmapProps = {}) {
   const [anchorsByTier, setAnchorsByTier] = useState<Float32Array[] | null>(
     null,
   );
   const [totalCommits, setTotalCommits] = useState(0);
 
   useEffect(() => {
-    // Build commits + group anchors by tier so each tier gets its own
-    // Points object (single material per tier, no per-instance color).
-    const commits = generateCommits2026();
-    const total = commits.reduce((s, c) => s + c, 0);
+    // Prefer real GitHub data; fall back to seeded synthetic.
+    const commits =
+      realCommits && realCommits.dailyCommits.length > 0
+        ? realCommits.dailyCommits
+        : generateCommits2026();
+    const total = realCommits
+      ? realCommits.total
+      : commits.reduce((s, c) => s + c, 0);
     setTotalCommits(total);
 
     // Heatmap is centered horizontally; vertical anchor depends on canvas
@@ -320,7 +332,7 @@ export function CommitHeatmap() {
 
     const arrays = buckets.map((b) => new Float32Array(b));
     setAnchorsByTier(arrays);
-  }, []);
+  }, [realCommits]);
 
   return (
     <section className="relative h-screen w-full overflow-hidden border-t border-bone/5 bg-ink">
