@@ -21,6 +21,7 @@ import { LatticeCube } from "@/components/lab/LatticeCube";
 import { LatticeWord } from "@/components/lab/LatticeWord";
 import { LetterformStrings } from "@/components/lab/LetterformStrings";
 import { MsdfDissolution } from "@/components/lab/MsdfDissolution";
+import { PathDraw } from "@/components/lab/PathDraw";
 import { PostFXShowcase } from "@/components/lab/PostFXShowcase";
 import { ScalarFieldShader } from "@/components/lab/ScalarFieldShader";
 import { WordMorph } from "@/components/lab/WordMorph";
@@ -89,6 +90,11 @@ export default function LabPage() {
         index="Experiment 12"
         title='3D "RichardTheBruce" — anchored, cursor-disturbed'
         meta="same lattice versioning as exp 11 · 3500 anchors sampled from Cormorant Garamond letterforms of 'RichardTheBruce' at 180px · z-jitter ±0.18 for 3D thickness when you orbit · cursor ray repel within 0.4 world units, strength 0.16 · text IS the rest state · hover any letter to dent it, the word reforms when cursor leaves"
+      />
+      <PathDraw
+        index="Experiment 13"
+        title="Scroll-driven path draw — vector traversal"
+        meta="section is 300vh tall · sticky-pinned SVG curve · GSAP ScrollTrigger drives stroke-dashoffset (path draws as you scroll) AND MotionPathPlugin (a glowing dot rides the path) · trail dot lags at scrub=1.6 for a streak · scrub values are tuned through Lenis-smoothed scroll so the whole choreography feels glassy"
       />
     </main>
   );
