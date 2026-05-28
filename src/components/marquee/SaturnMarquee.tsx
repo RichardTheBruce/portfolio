@@ -114,6 +114,22 @@ function buildWallAnchors(N: number, halfW: number, halfH: number): Float32Array
     out[i * 3 + 1] = -(v * 2 - 1) * halfH + (Math.random() - 0.5) * jy;
     out[i * 3 + 2] = (Math.random() - 0.5) * WALL_Z_JITTER;
   }
+  // Fisher-Yates shuffle. Without this, particles assigned to text/body/ring/
+  // moon (in that order) inherit contiguous grid positions, so the wall on
+  // load reads as horizontal color bands. Shuffling spreads each color
+  // uniformly across the viewport.
+  for (let i = N - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const ax = out[i * 3 + 0];
+    const ay = out[i * 3 + 1];
+    const az = out[i * 3 + 2];
+    out[i * 3 + 0] = out[j * 3 + 0];
+    out[i * 3 + 1] = out[j * 3 + 1];
+    out[i * 3 + 2] = out[j * 3 + 2];
+    out[j * 3 + 0] = ax;
+    out[j * 3 + 1] = ay;
+    out[j * 3 + 2] = az;
+  }
   return out;
 }
 
